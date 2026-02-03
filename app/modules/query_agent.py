@@ -1,6 +1,10 @@
 # modules/query_agent.py
 
 import logging
+from typing import Any
+
+from pydantic import BaseModel, Field, ConfigDict
+
 from app.modules.llm_handler import LLMHandler
 from app.modules.graph_store import GraphStore
 from app.modules.prompts.query_prompts import (
@@ -9,6 +13,29 @@ from app.modules.prompts.query_prompts import (
     CYPHER_PROMPT,
     ANSWER_PROMPT,
 )
+
+from app.modules.file_utils import log_json, log_cypher_queries
+
+
+class CypherParam(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    key: str = Field(..., min_length=1)
+    value: str
+
+
+class CypherQuery(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    cypher: str = Field(..., min_length=1)
+    params: list[CypherParam] = Field(default_factory=list)
+    reason: str | None = None
+
+
+class CypherQueryList(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    queries: list[CypherQuery] = Field(default_factory=list)
 
 
 class QueryAgent:
@@ -146,36 +173,28 @@ class QueryAgent:
             SCENARIO=scenario_text or "No scenario constraints applied.",
             QUESTION=question,
         )
-        result = self.llm.call_json(prompt)
+        log_json("cypher_prompt.json", {"prompt": prompt})
+        result = self.llm.call_schema_prompt(prompt, CypherQueryList)
+        log_json("cypher_prompt_result.json", {"result": result})
 
-        queries = []
-        if isinstance(result, dict):
-            items = result.get("queries", [])
-        elif isinstance(result, list):
-            items = result
+        if isinstance(result, CypherQueryList):
+            items = result.queries
+        elif isinstance(result, dict):
+            items = CypherQueryList.model_validate(result).queries
         else:
             items = []
 
-        if not isinstance(items, list):
-            items = []
-
-        for item in items:
-            if not isinstance(item, dict):
-                continue
-            cypher = item.get("cypher")
-            if not isinstance(cypher, str) or not cypher.strip():
-                continue
-            params = item.get("params") if isinstance(item.get("params"), dict) else {}
-            reason = item.get("reason") if isinstance(item.get("reason"), str) else None
-            queries.append(
-                {
-                    "cypher": cypher.strip(),
-                    "params": params,
-                    "reason": reason,
-                }
-            )
-
-        return queries
+        normalized = [
+            {
+                "cypher": item.cypher.strip(),
+                "params": {param.key: param.value for param in (item.params or [])},
+                "reason": item.reason,
+            }
+            for item in items
+            if item.cypher and item.cypher.strip()
+        ]
+        log_cypher_queries("cypher_queries.cypher", normalized)
+        return normalized
 
     def execute_cypher_queries(self, queries):
         results = []

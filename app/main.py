@@ -16,6 +16,9 @@ from app.modules.llm_handler import LLMHandler
 from app.modules.query_agent import QueryAgent
 from app.modules.vector_store import SimpleVectorStore
 
+from app.modules.file_utils import log_json
+
+
 load_dotenv()
 
 REQUIRED_COLUMNS = [
@@ -187,6 +190,7 @@ def upload_data(
 
 @app.post("/chat/rag")
 def chat_rag(payload: Dict) -> Dict:
+    print("RAG PAYLOAD:\n", payload)
     question = (payload.get("question") or "").strip()
     scenario = payload.get("scenario") or {}
     if not question:
@@ -206,7 +210,8 @@ def chat_rag(payload: Dict) -> Dict:
     retrieved = retrieve_notes(question, llm, STATE.vector_store)
     scenario_text = scenario_summary(scenario)
     answer = rag_answer(llm, question, scenario_text, retrieved)
-    return {
+
+    retval =  {
         "answer": answer,
         "notes": retrieved,
         "retrieval": {
@@ -217,10 +222,13 @@ def chat_rag(payload: Dict) -> Dict:
         "llm_provider": llm_config.provider,
         "llm_model": llm_config.model,
     }
+    log_json("rag_response.json", retval)
+    return retval
 
 
 @app.post("/chat/graphrag")
 def chat_graphrag(payload: Dict) -> Dict:
+    print("GRAPHRAG PAYLOAD:\n", payload)
     question = (payload.get("question") or "").strip()
     scenario = payload.get("scenario") or {}
     if not question:
@@ -317,13 +325,6 @@ def chat_both(payload: Dict) -> Dict:
     graphrag = chat_graphrag(payload)
     return {"rag": rag, "graphrag": graphrag}
 
-def log_json(file_path: str, data_to_save: Dict) -> None:
-    try:
-        with open(file_path, 'w') as json_file:
-            json.dump(data_to_save, json_file, indent=4) # Using 'indent' for human-readable formatting
-        print(f"Data successfully saved to {file_path}")
-    except IOError as e:
-        print(f"Error saving file: {e}")
 
 def parse_csv(content: bytes) -> List[Dict]:
     text = content.decode("utf-8")
@@ -448,7 +449,8 @@ def rag_answer(
         f"Question: {question}\n"
         "Answer:"
     )
-    print("RAG PROMPT:\n", prompt)
+    #print("RAG PROMPT:\n", prompt)
+    log_json("rag_prompt.json", {"prompt": prompt})
     return llm.call(prompt)
 
 
@@ -470,7 +472,8 @@ def graphrag_fallback_answer(
         "Answer:"
     )
     print("GRAPHRAG FALLBACK PROMPT:\n", prompt)
-    return llm.call(prompt)
+    #return llm.call(prompt)
+    return({"error": "unknown"})
 
 
 def build_relationship_trace(relationships: List[Dict]) -> List[Dict]:

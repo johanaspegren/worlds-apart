@@ -72,8 +72,8 @@ CYPHER_PROMPT = """
     {{
       "queries": [
         {{
-          "cypher": "...",
-          "params": {{"key": "value"}},
+          "cypher": "SINGLE STRING. Do NOT split across keys.",
+          "params": [{{"key": "param_name", "value": "param_value (string)"}}],
           "reason": "short reason"
         }}
       ]

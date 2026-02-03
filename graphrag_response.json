@@ -1,39 +1,53 @@
 {
-    "answer": "The supplier with the highest total shipping cost is **Supplier B**, with a total shipping cost of **21.2 USD**.",
-    "scenario": "Max lead time is 20 days.",
-    "queries": [
+  "answer": [
+    "There are no available suppliers for the Control Chip that can ship to a factory in Poland within the maximum lead time",
+    "of 20 days. Therefore, the cheapest way to get Control Chip to a factory in Poland cannot be determined."
+  ],
+  "scenario": "Max lead time is 20 days.",
+  "queries": [
+    {
+      "cypher": "MATCH (p:Product {name: $product_name})-[:USES]->(c:Component)<-[:SUPPLIED_BY]-(s:Supplier)-[:LOCATED_IN]->(country:Country) MATCH (f:Factory)-[:LOCATED_IN]->(country) MATCH (s)-[ship:SHIPS_TO]->(f) WHERE ship.time_days <= $max_lead_time RETURN s.name AS Supplier, f.name AS Factory, ship.cost_usd AS ShippingCost ORDER BY ship.cost_usd LIMIT 50",
+      "params": {
+        "product_name": "Control Chip",
+        "max_lead_time": "20"
+      },
+      "reason": "Find suppliers for Control Chip with shipping to factories in the same country."
+    },
+    {
+      "cypher": "MATCH (p:Product {name: $product_name})-[:USES]->(c:Component)<-[:SUPPLIED_BY]-(s:Supplier)-[:LOCATED_IN]->(country:Country) MATCH (f:Factory)-[:LOCATED_IN]->(country) MATCH (s)-[ship:SHIPS_TO]->(f) WHERE ship.time_days <= $max_lead_time RETURN COUNT(s) AS SupplierCount ORDER BY SupplierCount DESC LIMIT 1",
+      "params": {
+        "product_name": "Control Chip",
+        "max_lead_time": "20"
+      },
+      "reason": "Count suppliers to ensure there are options available."
+    }
+  ],
+  "results": [
+    {
+      "cypher": "MATCH (p:Product {name: $product_name})-[:USES]->(c:Component)<-[:SUPPLIED_BY]-(s:Supplier)-[:LOCATED_IN]->(country:Country) MATCH (f:Factory)-[:LOCATED_IN]->(country) MATCH (s)-[ship:SHIPS_TO]->(f) WHERE ship.time_days <= $max_lead_time RETURN s.name AS Supplier, f.name AS Factory, ship.cost_usd AS ShippingCost ORDER BY ship.cost_usd LIMIT 50",
+      "params": {
+        "product_name": "Control Chip",
+        "max_lead_time": "20"
+      },
+      "reason": "Find suppliers for Control Chip with shipping to factories in the same country.",
+      "row_count": 0,
+      "rows": []
+    },
+    {
+      "cypher": "MATCH (p:Product {name: $product_name})-[:USES]->(c:Component)<-[:SUPPLIED_BY]-(s:Supplier)-[:LOCATED_IN]->(country:Country) MATCH (f:Factory)-[:LOCATED_IN]->(country) MATCH (s)-[ship:SHIPS_TO]->(f) WHERE ship.time_days <= $max_lead_time RETURN COUNT(s) AS SupplierCount ORDER BY SupplierCount DESC LIMIT 1",
+      "params": {
+        "product_name": "Control Chip",
+        "max_lead_time": "20"
+      },
+      "reason": "Count suppliers to ensure there are options available.",
+      "row_count": 1,
+      "rows": [
         {
-            "cypher": "MATCH (s:Supplier)-[r:SHIPS_TO]->(f:Factory) RETURN s.name AS supplier_name, SUM(r.cost_usd) AS total_shipping_cost ORDER BY total_shipping_cost DESC LIMIT 50",
-            "params": {},
-            "reason": "This query retrieves suppliers and their total shipping costs, ordered by the highest cost."
+          "SupplierCount": 0
         }
-    ],
-    "results": [
-        {
-            "cypher": "MATCH (s:Supplier)-[r:SHIPS_TO]->(f:Factory) RETURN s.name AS supplier_name, SUM(r.cost_usd) AS total_shipping_cost ORDER BY total_shipping_cost DESC LIMIT 50",
-            "params": {},
-            "reason": "This query retrieves suppliers and their total shipping costs, ordered by the highest cost.",
-            "row_count": 4,
-            "rows": [
-                {
-                    "supplier_name": "Supplier B",
-                    "total_shipping_cost": 21.200000000000003
-                },
-                {
-                    "supplier_name": "Supplier A",
-                    "total_shipping_cost": 12.6
-                },
-                {
-                    "supplier_name": "Supplier D",
-                    "total_shipping_cost": 10.399999999999999
-                },
-                {
-                    "supplier_name": "Supplier C",
-                    "total_shipping_cost": 2.6
-                }
-            ]
-        }
-    ],
-    "llm_provider": "openai",
-    "llm_model": "gpt-4o-mini"
+      ]
+    }
+  ],
+  "llm_provider": "openai",
+  "llm_model": "gpt-4o-mini"
 }
