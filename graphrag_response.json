@@ -1,91 +1,86 @@
 {
   "answer": [
-    "The products impacted by an asteroid impact in Vietnam are those supplied by suppliers located in Vietnam. The Cypher results indicate the following products are supplied by those suppliers:",
+    "The products impacted by an asteroid impact in Vietnam are **Product Alpha**, **Product Beta**, and **Product Gamma**.",
     "",
-    "1. Product Alpha (P1)",
-    "2. Product Beta (P2)",
-    "3. Product Gamma (P3)",
+    "The reasoning is as follows:",
     "",
-    "Since all these products are associated with suppliers in Vietnam, none of them are unaffected by the asteroid impact.",
+    "1. The query to find products that use a component named \"asteroid impact\" returned no results, indicating that there are no products directly associated with a component by that name.",
+    "  ",
+    "2. However, a separate query identified products supplied by suppliers located in Vietnam, which returned three products:",
+    "   - Product Alpha (id: P1)",
+    "   - Product Beta (id: P2)",
+    "   - Product Gamma (id: P3)",
     "",
-    "Therefore, there are no products that are not impacted by an asteroid impact in Vietnam based on the provided data."
+    "3. Although these products do not use a specific component named \"asteroid impact,\" they are nonetheless linked to suppliers in Vietnam. Thus, they can be considered impacted by the situation in Vietnam.",
+    "",
+    "4. A third query that attempted to identify factories producing products that use the \"asteroid impact\" component also returned no results, reinforcing that there are no direct products tied to the impacted component.",
+    "",
+    "In summary, while no products directly use the \"asteroid impact\" component, the products supplied by Vietnamese suppliers are the ones potentially impacted by any consequences stemming from an asteroid impact in Vietnam."
   ],
   "scenario": "No scenario constraints applied.",
   "queries": [
     {
-      "cypher": "MATCH (p:Product)-[:USES]->(comp:Component)-[:SUPPLIED_BY]->(s:Supplier)-[:LOCATED_IN]->(c:Country {name: $country_name}) RETURN p.id AS product_id, p.name AS product_name LIMIT 50",
+      "cypher": "MATCH (comp:Component)<-[:USES]-(p:Product) WHERE comp.name = $component_name RETURN p.id AS product_id, p.name AS product_name LIMIT 50",
+      "params": {
+        "component_name": "asteroid impact"
+      },
+      "reason": "Retrieve products that use the component impacted by the asteroid"
+    },
+    {
+      "cypher": "MATCH (s:Supplier)-[:SUPPLIES]->(comp:Component)<-[:USES]-(p:Product) WHERE s.country = $country_name RETURN DISTINCT p.id AS product_id, p.name AS product_name LIMIT 50",
       "params": {
         "country_name": "Vietnam"
       },
-      "reason": "Finding products that are supplied by suppliers located in Vietnam."
+      "reason": "Find products supplied by suppliers located in Vietnam"
+    },
+    {
+      "cypher": "MATCH (f:Factory)-[:PRODUCES]->(p:Product)<-[:USES]-(comp:Component) WHERE comp.name = $component_name RETURN f.id AS factory_id, f.name AS factory_name, p.id AS product_id, p.name AS product_name LIMIT 50",
+      "params": {
+        "component_name": "asteroid impact"
+      },
+      "reason": "Identify factories producing products that use the impacted component"
     }
   ],
   "results": [
     {
-      "cypher": "MATCH (p:Product)-[:USES]->(comp:Component)-[:SUPPLIED_BY]->(s:Supplier)-[:LOCATED_IN]->(c:Country {name: $country_name}) RETURN p.id AS product_id, p.name AS product_name LIMIT 50",
+      "cypher": "MATCH (comp:Component)<-[:USES]-(p:Product) WHERE comp.name = $component_name RETURN p.id AS product_id, p.name AS product_name LIMIT 50",
+      "params": {
+        "component_name": "asteroid impact"
+      },
+      "reason": "Retrieve products that use the component impacted by the asteroid",
+      "row_count": 0,
+      "rows": []
+    },
+    {
+      "cypher": "MATCH (s:Supplier)-[:SUPPLIES]->(comp:Component)<-[:USES]-(p:Product) WHERE s.country = $country_name RETURN DISTINCT p.id AS product_id, p.name AS product_name LIMIT 50",
       "params": {
         "country_name": "Vietnam"
       },
-      "reason": "Finding products that are supplied by suppliers located in Vietnam.",
-      "row_count": 14,
+      "reason": "Find products supplied by suppliers located in Vietnam",
+      "row_count": 3,
       "rows": [
         {
           "product_id": "P1",
           "product_name": "Product Alpha"
         },
         {
-          "product_id": "P1",
-          "product_name": "Product Alpha"
-        },
-        {
-          "product_id": "P1",
-          "product_name": "Product Alpha"
-        },
-        {
           "product_id": "P2",
           "product_name": "Product Beta"
-        },
-        {
-          "product_id": "P2",
-          "product_name": "Product Beta"
-        },
-        {
-          "product_id": "P3",
-          "product_name": "Product Gamma"
-        },
-        {
-          "product_id": "P3",
-          "product_name": "Product Gamma"
-        },
-        {
-          "product_id": "P1",
-          "product_name": "Product Alpha"
-        },
-        {
-          "product_id": "P1",
-          "product_name": "Product Alpha"
-        },
-        {
-          "product_id": "P1",
-          "product_name": "Product Alpha"
-        },
-        {
-          "product_id": "P2",
-          "product_name": "Product Beta"
-        },
-        {
-          "product_id": "P2",
-          "product_name": "Product Beta"
-        },
-        {
-          "product_id": "P3",
-          "product_name": "Product Gamma"
         },
         {
           "product_id": "P3",
           "product_name": "Product Gamma"
         }
       ]
+    },
+    {
+      "cypher": "MATCH (f:Factory)-[:PRODUCES]->(p:Product)<-[:USES]-(comp:Component) WHERE comp.name = $component_name RETURN f.id AS factory_id, f.name AS factory_name, p.id AS product_id, p.name AS product_name LIMIT 50",
+      "params": {
+        "component_name": "asteroid impact"
+      },
+      "reason": "Identify factories producing products that use the impacted component",
+      "row_count": 0,
+      "rows": []
     }
   ],
   "llm_provider": "openai",

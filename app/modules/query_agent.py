@@ -52,7 +52,7 @@ class QueryAgent:
         prompt = MENTION_PROMPT.format(SCHEMA=schema_text) + f'\n\nQuestion:\n"{question}"\n'
         self.log.info(f"Extract mentions prompt: {prompt}")
 
-        result = self.llm.call_json(prompt)
+        result = self.llm.call_json(prompt, temperature=0.2)
         self.log.info(f"Extract mentions raw result: {result}")
         self.log.info(f"type: {type(result)}")
 
@@ -156,7 +156,7 @@ class QueryAgent:
             QUESTION=question,
             SCENARIO=scenario_text or "No scenario constraints applied.",
         )
-        return self.llm.call(prompt)
+        return self.llm.call(prompt, temperature=0.2)
 
     # ---------------------------
     # MAIN ENTRYPOINT
@@ -216,7 +216,7 @@ class QueryAgent:
             QUESTION=question,
         )
         log_text("cypher_prompt.txt", prompt)
-        result = self.llm.call_schema_prompt(prompt, CypherQueryList)
+        result = self.llm.call_schema_prompt(prompt, CypherQueryList, temperature=0.1)
         log_json("cypher_prompt_result.json", {"result": result})
 
         if isinstance(result, CypherQueryList):
@@ -286,11 +286,13 @@ class QueryAgent:
             QUESTION=question,
             RESULTS=results,
         )
-        return self.llm.call(prompt)
+        log_text("answer_prompt.txt", prompt)
+        return self.llm.call(prompt, temperature=0.2)
 
     def ask_cypher(self, question: str, scenario_text: str | None = None):
         queries = self.generate_cypher_queries(question, scenario_text)
         results = self.execute_cypher_queries(queries) if queries else []
+        log_json("cypher_execution_results.json", {"results": results})
         answer = self.answer_from_cypher(question, scenario_text, results)
         return {
             "answer": answer,

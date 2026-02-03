@@ -65,8 +65,12 @@ CYPHER_PROMPT = """
       Use node ids instead of names whenever an id is provided.
     - If status=ambiguous, choose the label that fits the canonical path.
     - If status=unresolved, do NOT invent a node type. Use other constraints instead.
+    - Return 1-3 queries that together answer the question.
+    - If the question asks for "cheapest" or "best way", prefer 2-3 queries:
+      1) identify candidate paths/nodes, 2) compute costs, 3) list top results.
     - Include LIMIT 50 unless the query is an aggregate.
     - Relationship directions are STRICT and MUST follow the ontology exactly.
+    - Prefer SUPPLIES when connecting Supplier -> Component unless the question explicitly asks for "supplied by".
     - Never reverse relationship directions.
     - Prefer existence and dependency paths over metrics unless explicitly requested.
     - Do NOT access relationship properties unless the question asks for cost, time, emissions, or optimisation.
@@ -83,6 +87,7 @@ CYPHER_PROMPT = """
 
     Canonical direction patterns (COPY EXACTLY):
     - USES:        (p:Product)-[:USES]->(comp:Component)
+    - SUPPLIES:    (s:Supplier)-[:SUPPLIES]->(comp:Component)
     - SUPPLIED_BY: (comp:Component)-[:SUPPLIED_BY]->(s:Supplier)
     - PRODUCES:    (f:Factory)-[:PRODUCES]->(p:Product)
     - LOCATED_IN:  (x)-[:LOCATED_IN]->(c:Country)
@@ -92,6 +97,7 @@ CYPHER_PROMPT = """
 
     Forbidden (WRONG) patterns:
     - (s:Supplier)-[:SUPPLIED_BY]->(:Component)
+    - (:Component)-[:SUPPLIES]->(:Supplier)
     - (:Product)-[:PRODUCES]->(:Factory)
     - (:Country)-[:LOCATED_IN]->(:Supplier)
 
@@ -117,21 +123,35 @@ CYPHER_PROMPT = """
 """
 
 ANSWER_PROMPT = """
-    You are a supply chain graph assistant.
-    Use ONLY the provided Cypher results to answer the question.
-    If results are empty or insufficient, say so clearly.
+You are a supply chain graph assistant.
 
-    Schema / Ontology:
-    {SCHEMA}
+CRITICAL RULES:
+- Use ONLY the provided Cypher results.
+- Do NOT assume facts not present in the results.
+- Every factual claim MUST be supported by the results.
+- If results are empty or insufficient, say so clearly.
+- Do NOT introduce new entities, paths, or metrics.
 
-    Scenario:
-    {SCENARIO}
+How to answer:
+1. Start with a concise direct answer to the question.
+2. Explain the reasoning using relationships and entities found in the results.
+3. Refer explicitly to what the data shows (e.g. dependencies, costs, locations).
+4. If multiple queries were used, combine them coherently.
+5. If some expected paths were checked but returned no rows, state that.
+6. Do NOT generalise beyond the scope of the results.
 
-    Question:
-    {QUESTION}
+Schema / Ontology:
+{SCHEMA}
 
-    Cypher Results:
-    {RESULTS}
+Scenario:
+{SCENARIO}
 
-    Answer:
+Question:
+{QUESTION}
+
+Cypher Results (AUTHORITATIVE EVIDENCE):
+{RESULTS}
+
+Answer (grounded, structured, and data-driven):
+
 """

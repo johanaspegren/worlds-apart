@@ -19,4 +19,4 @@ class RAGEngine:
         context = "\n\n".join([m["text"] for m in matches])
         prompt = f"Answer the question using ONLY this context:\n{context}\n\nQuestion: {question}"
 
-        return self.llm.call(prompt)
+        return self.llm.call(prompt, temperature=0.2)

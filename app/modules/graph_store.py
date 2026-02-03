@@ -89,6 +89,7 @@ class GraphStore:
             "Relationships:\n"
             "- (Product)-[:USES]->(Component)\n"
             "- (Component)-[:SUPPLIED_BY]->(Supplier)\n"
+            "- (Supplier)-[:SUPPLIES]->(Component)\n"
             "- (Factory)-[:PRODUCES]->(Product)\n"
             "- (Supplier)-[:LOCATED_IN]->(Country)\n"
             "- (Factory)-[:LOCATED_IN]->(Country)\n"
@@ -228,6 +229,7 @@ class GraphStore:
 
             MERGE (product)-[:USES {row_id: $row_id}]->(component)
             MERGE (component)-[:SUPPLIED_BY {row_id: $row_id}]->(supplier)
+            MERGE (supplier)-[:SUPPLIES {row_id: $row_id}]->(component)
             MERGE (factory)-[:PRODUCES {row_id: $row_id}]->(product)
 
             MERGE (supplier)-[:LOCATED_IN]->(supplier_country)

@@ -2,14 +2,34 @@
   "result": {
     "queries": [
       {
-        "cypher": "MATCH (p:Product)-[:USES]->(comp:Component)-[:SUPPLIED_BY]->(s:Supplier)-[:LOCATED_IN]->(c:Country {name: $country_name}) RETURN p.id AS product_id, p.name AS product_name LIMIT 50",
+        "cypher": "MATCH (comp:Component)<-[:USES]-(p:Product) WHERE comp.name = $component_name RETURN p.id AS product_id, p.name AS product_name LIMIT 50",
+        "params": [
+          {
+            "key": "component_name",
+            "value": "asteroid impact"
+          }
+        ],
+        "reason": "Retrieve products that use the component impacted by the asteroid"
+      },
+      {
+        "cypher": "MATCH (s:Supplier)-[:SUPPLIES]->(comp:Component)<-[:USES]-(p:Product) WHERE s.country = $country_name RETURN DISTINCT p.id AS product_id, p.name AS product_name LIMIT 50",
         "params": [
           {
             "key": "country_name",
             "value": "Vietnam"
           }
         ],
-        "reason": "Finding products that are supplied by suppliers located in Vietnam."
+        "reason": "Find products supplied by suppliers located in Vietnam"
+      },
+      {
+        "cypher": "MATCH (f:Factory)-[:PRODUCES]->(p:Product)<-[:USES]-(comp:Component) WHERE comp.name = $component_name RETURN f.id AS factory_id, f.name AS factory_name, p.id AS product_id, p.name AS product_name LIMIT 50",
+        "params": [
+          {
+            "key": "component_name",
+            "value": "asteroid impact"
+          }
+        ],
+        "reason": "Identify factories producing products that use the impacted component"
       }
     ]
   }

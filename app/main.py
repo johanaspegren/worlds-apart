@@ -438,7 +438,7 @@ def rag_answer(
     )
     #print("RAG PROMPT:\n", prompt)
     log_json("rag_prompt.json", {"prompt": prompt})
-    return llm.call(prompt)
+    return llm.call(prompt, temperature=0.2)
 
 
 def graphrag_fallback_answer(
@@ -459,8 +459,7 @@ def graphrag_fallback_answer(
         "Answer:"
     )
     print("GRAPHRAG FALLBACK PROMPT:\n", prompt)
-    #return llm.call(prompt)
-    return({"error": "unknown"})
+    return llm.call(prompt, temperature=0.2)
 
 
 def build_relationship_trace(relationships: List[Dict]) -> List[Dict]:

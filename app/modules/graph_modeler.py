@@ -127,7 +127,7 @@ class GraphModeler:
 
         # ---- PASS 1: ENTITIES ----
         ent_prompt = ENTITY_PROMPT.replace("{TEXT}", snippet)
-        entity_list: EntityList = self.llm.call_schema_prompt(ent_prompt, EntityList)
+        entity_list: EntityList = self.llm.call_schema_prompt(ent_prompt, EntityList, temperature=0.2)
         entities = entity_list.entities
 
         # ---- FORMAT ENTITIES FOR RELATION PROMPT ----
@@ -136,7 +136,7 @@ class GraphModeler:
 
         # ---- PASS 2: RELATIONS ----
         rel_prompt = RELATION_PROMPT.replace("{ENTITY_LIST}", formatted_entities).replace("{TEXT}", snippet)
-        relation_list: RelationList = self.llm.call_schema_prompt(rel_prompt, RelationList)
+        relation_list: RelationList = self.llm.call_schema_prompt(rel_prompt, RelationList, temperature=0.2)
         relations = relation_list.relations
 
         return GraphResult(entities=entities, relations=relations)
