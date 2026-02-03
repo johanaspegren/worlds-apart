@@ -1,5 +1,6 @@
 import csv
 import io
+import json
 import os
 from dataclasses import dataclass, field
 from typing import Dict, List, Tuple
@@ -10,10 +11,10 @@ from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from openpyxl import load_workbook
 
-from modules.graph_store import GraphStore
-from modules.llm_handler import LLMHandler
-from modules.query_agent import QueryAgent
-from modules.vector_store import SimpleVectorStore
+from app.modules.graph_store import GraphStore
+from app.modules.llm_handler import LLMHandler
+from app.modules.query_agent import QueryAgent
+from app.modules.vector_store import SimpleVectorStore
 
 load_dotenv()
 
@@ -56,6 +57,7 @@ NUMERIC_COLUMNS = {
 }
 
 NOTES_DIR = "notes"
+DEV_PERSIST_DB_ENV = "DEV_PERSIST_DB"
 
 
 @dataclass
@@ -85,6 +87,44 @@ STATE = WorldState()
 
 app = FastAPI()
 app.mount("/static", StaticFiles(directory="static"), name="static")
+
+
+def is_truthy(value: str | None) -> bool:
+    if value is None:
+        return False
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def dev_persist_enabled() -> bool:
+    return is_truthy(os.getenv(DEV_PERSIST_DB_ENV))
+
+
+def load_notes_from_disk() -> None:
+    if STATE.notes:
+        return
+    if not os.path.isdir(NOTES_DIR):
+        return
+    notes: Dict[int, str] = {}
+    for filename in sorted(os.listdir(NOTES_DIR)):
+        if not filename.startswith("note_row_") or not filename.endswith(".txt"):
+            continue
+        try:
+            note_id = int(filename.replace("note_row_", "").replace(".txt", ""))
+        except ValueError:
+            continue
+        path = os.path.join(NOTES_DIR, filename)
+        with open(path, "r", encoding="utf-8") as handle:
+            notes[note_id] = handle.read()
+    STATE.notes = notes
+
+
+def ensure_vector_store(llm: LLMHandler) -> None:
+    if STATE.vector_store.docs:
+        return
+    if not STATE.notes:
+        load_notes_from_disk()
+    if STATE.notes:
+        STATE.vector_store = build_vector_store(llm)
 
 
 @app.get("/")
@@ -149,8 +189,6 @@ def upload_data(
 def chat_rag(payload: Dict) -> Dict:
     question = (payload.get("question") or "").strip()
     scenario = payload.get("scenario") or {}
-    if not STATE.rows:
-        raise HTTPException(status_code=400, detail="No data uploaded")
     if not question:
         raise HTTPException(status_code=400, detail="Question is required")
 
@@ -161,12 +199,20 @@ def chat_rag(payload: Dict) -> Dict:
     )
     llm = build_llm(llm_config)
 
+    if not STATE.rows and not dev_persist_enabled():
+        raise HTTPException(status_code=400, detail="No data uploaded")
+
+    ensure_vector_store(llm)
     retrieved = retrieve_notes(question, llm, STATE.vector_store)
     scenario_text = scenario_summary(scenario)
     answer = rag_answer(llm, question, scenario_text, retrieved)
     return {
         "answer": answer,
         "notes": retrieved,
+        "retrieval": {
+            "top_k": len(retrieved),
+            "matches": retrieved,
+        },
         "scenario": scenario_text,
         "llm_provider": llm_config.provider,
         "llm_model": llm_config.model,
@@ -175,6 +221,43 @@ def chat_rag(payload: Dict) -> Dict:
 
 @app.post("/chat/graphrag")
 def chat_graphrag(payload: Dict) -> Dict:
+    question = (payload.get("question") or "").strip()
+    scenario = payload.get("scenario") or {}
+    if not question:
+        raise HTTPException(status_code=400, detail="Question is required")
+
+    llm_config = resolve_llm_config(
+        payload.get("provider"),
+        payload.get("model"),
+        payload.get("embed_model"),
+    )
+    llm = build_llm(llm_config)
+
+    scenario_text = scenario_summary(scenario)
+    graph_store = get_graph_store()
+    agent = QueryAgent(llm, graph_store)
+
+    if not STATE.rows and not dev_persist_enabled():
+        raise HTTPException(status_code=400, detail="No data uploaded")
+    if not STATE.rows and dev_persist_enabled() and not graph_store.has_data():
+        raise HTTPException(status_code=400, detail="No graph data available")
+
+    connection = agent.ask_cypher(question, scenario_text)
+
+    retval = {
+        "answer": connection.get("answer"),
+        "scenario": scenario_text,
+        "queries": connection.get("queries"),
+        "results": connection.get("results"),
+        "llm_provider": llm_config.provider,
+        "llm_model": llm_config.model,
+    }
+    print("GRAPHRAG RESPONSE:\n", retval)
+    log_json("graphrag_response.json", retval)
+    return retval
+
+
+def chat_graphrag_legacy(payload: Dict) -> Dict:
     question = (payload.get("question") or "").strip()
     scenario = payload.get("scenario") or {}
     if not STATE.rows:
@@ -209,6 +292,10 @@ def chat_graphrag(payload: Dict) -> Dict:
             retrieved,
         )
         connection["answer"] = answer
+        connection["retrieval"] = {
+            "top_k": len(retrieved),
+            "matches": retrieved,
+        }
         trace_summary = "No explicit relationships found; answered with schema + retrieved notes."
 
     return {
@@ -217,6 +304,8 @@ def chat_graphrag(payload: Dict) -> Dict:
         "trace_summary": trace_summary,
         "scenario": scenario_text,
         "cypher": connection.get("cypher"),
+        "params": connection.get("params"),
+        "retrieval": connection.get("retrieval"),
         "llm_provider": llm_config.provider,
         "llm_model": llm_config.model,
     }
@@ -228,6 +317,13 @@ def chat_both(payload: Dict) -> Dict:
     graphrag = chat_graphrag(payload)
     return {"rag": rag, "graphrag": graphrag}
 
+def log_json(file_path: str, data_to_save: Dict) -> None:
+    try:
+        with open(file_path, 'w') as json_file:
+            json.dump(data_to_save, json_file, indent=4) # Using 'indent' for human-readable formatting
+        print(f"Data successfully saved to {file_path}")
+    except IOError as e:
+        print(f"Error saving file: {e}")
 
 def parse_csv(content: bytes) -> List[Dict]:
     text = content.decode("utf-8")
@@ -305,12 +401,21 @@ def build_vector_store(llm: LLMHandler) -> SimpleVectorStore:
     return store
 
 
-def retrieve_notes(question: str, llm: LLMHandler, store: SimpleVectorStore, top_k: int = 5) -> List[Tuple[int, str]]:
+def retrieve_notes(
+    question: str, llm: LLMHandler, store: SimpleVectorStore, top_k: int = 5
+) -> List[Dict]:
     if not question or not store.docs:
         return []
     query_embedding = llm.embed(question)
     matches = store.query(query_embedding, n=top_k)
-    return [(int(match["id"]), match["text"]) for match in matches]
+    return [
+        {
+            "id": int(match["id"]),
+            "score": match["score"],
+            "text": match["text"],
+        }
+        for match in matches
+    ]
 
 
 def scenario_summary(scenario: Dict) -> str:
@@ -332,9 +437,9 @@ def rag_answer(
     llm: LLMHandler,
     question: str,
     scenario_text: str,
-    retrieved: List[Tuple[int, str]],
+    retrieved: List[Dict],
 ) -> str:
-    notes_text = "\n\n".join([note for _, note in retrieved])
+    notes_text = "\n\n".join([note["text"] for note in retrieved])
     prompt = (
         "You are a supply chain analyst. Use ONLY the provided context to answer. "
         "If the context does not contain the answer, say you do not have enough evidence.\n\n"
@@ -343,6 +448,7 @@ def rag_answer(
         f"Question: {question}\n"
         "Answer:"
     )
+    print("RAG PROMPT:\n", prompt)
     return llm.call(prompt)
 
 
@@ -351,9 +457,9 @@ def graphrag_fallback_answer(
     question: str,
     scenario_text: str,
     schema_summary: Dict,
-    retrieved: List[Tuple[int, str]],
+    retrieved: List[Dict],
 ) -> str:
-    notes_text = "\n\n".join([note for _, note in retrieved])
+    notes_text = "\n\n".join([note["text"] for note in retrieved])
     prompt = (
         "You are a supply chain graph assistant. Use the schema summary and retrieved notes "
         "to answer the question. If the answer is not present, explain the limitation.\n\n"
@@ -363,6 +469,7 @@ def graphrag_fallback_answer(
         f"Question: {question}\n"
         "Answer:"
     )
+    print("GRAPHRAG FALLBACK PROMPT:\n", prompt)
     return llm.call(prompt)
 
 
@@ -370,8 +477,9 @@ def build_relationship_trace(relationships: List[Dict]) -> List[Dict]:
     trace = []
     for rel in relationships:
         rel_type = rel.get("rel_type", "REL")
-        confidence = rel.get("confidence")
-        source_span = rel.get("source_span")
+        rel_props = rel.get("rel_props") or {}
+        confidence = rel_props.get("confidence")
+        source_span = rel_props.get("source_span")
         summary_parts = [rel_type]
         if confidence is not None:
             summary_parts.append(f"confidence {confidence:.2f}")
@@ -382,9 +490,11 @@ def build_relationship_trace(relationships: List[Dict]) -> List[Dict]:
                 "rel_type": rel_type,
                 "confidence": confidence,
                 "source_span": source_span,
+                "rel_props": rel_props,
                 "summary": " | ".join(summary_parts),
             }
         )
+    print("RELATIONSHIP TRACE:\n", trace)
     return trace
 
 

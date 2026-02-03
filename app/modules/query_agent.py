@@ -1,9 +1,14 @@
 # modules/query_agent.py
 
 import logging
-from modules.llm_handler import LLMHandler
-from modules.graph_store import GraphStore
-from modules.prompts.query_prompts import MENTION_PROMPT, EXPLAIN_PROMPT
+from app.modules.llm_handler import LLMHandler
+from app.modules.graph_store import GraphStore
+from app.modules.prompts.query_prompts import (
+    MENTION_PROMPT,
+    EXPLAIN_PROMPT,
+    CYPHER_PROMPT,
+    ANSWER_PROMPT,
+)
 
 
 class QueryAgent:
@@ -16,7 +21,8 @@ class QueryAgent:
     # 1. Extract mentions
     # ---------------------------
     def extract_mentions(self, question: str):
-        prompt = MENTION_PROMPT + f'\n\nQuestion:\n"{question}"\n'
+        schema_text = self.graph_store.get_supply_chain_ontology_text()
+        prompt = MENTION_PROMPT.format(SCHEMA=schema_text) + f'\n\nQuestion:\n"{question}"\n'
         self.log.info(f"Extract mentions prompt: {prompt}")
 
         result = self.llm.call_json(prompt)
@@ -78,7 +84,9 @@ class QueryAgent:
         ent_txt = str(connection["entity1"]) + "\n" + str(connection["entity2"])
         rel_txt = str(connection["relationships"])
 
+        schema_text = self.graph_store.get_supply_chain_ontology_text()
         prompt = EXPLAIN_PROMPT.format(
+            SCHEMA=schema_text,
             ENTITIES=ent_txt,
             RELATIONS=rel_txt,
             QUESTION=question,
@@ -126,4 +134,82 @@ class QueryAgent:
             "raw": connection["relationships"],
             "cypher": connection["cypher"],
             "params": connection["params"]
+        }
+
+    # ---------------------------
+    # Cypher-first GraphRAG
+    # ---------------------------
+    def generate_cypher_queries(self, question: str, scenario_text: str | None = None):
+        schema_text = self.graph_store.get_supply_chain_ontology_text()
+        prompt = CYPHER_PROMPT.format(
+            SCHEMA=schema_text,
+            SCENARIO=scenario_text or "No scenario constraints applied.",
+            QUESTION=question,
+        )
+        result = self.llm.call_json(prompt)
+
+        queries = []
+        if isinstance(result, dict):
+            items = result.get("queries", [])
+        elif isinstance(result, list):
+            items = result
+        else:
+            items = []
+
+        if not isinstance(items, list):
+            items = []
+
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            cypher = item.get("cypher")
+            if not isinstance(cypher, str) or not cypher.strip():
+                continue
+            params = item.get("params") if isinstance(item.get("params"), dict) else {}
+            reason = item.get("reason") if isinstance(item.get("reason"), str) else None
+            queries.append(
+                {
+                    "cypher": cypher.strip(),
+                    "params": params,
+                    "reason": reason,
+                }
+            )
+
+        return queries
+
+    def execute_cypher_queries(self, queries):
+        results = []
+        for query in queries:
+            cypher = query["cypher"]
+            params = query.get("params") or {}
+            rows = self.graph_store.run_cypher(cypher, params)
+            results.append(
+                {
+                    "cypher": cypher,
+                    "params": params,
+                    "reason": query.get("reason"),
+                    "row_count": len(rows),
+                    "rows": rows[:50],
+                }
+            )
+        return results
+
+    def answer_from_cypher(self, question: str, scenario_text: str | None, results):
+        schema_text = self.graph_store.get_supply_chain_ontology_text()
+        prompt = ANSWER_PROMPT.format(
+            SCHEMA=schema_text,
+            SCENARIO=scenario_text or "No scenario constraints applied.",
+            QUESTION=question,
+            RESULTS=results,
+        )
+        return self.llm.call(prompt)
+
+    def ask_cypher(self, question: str, scenario_text: str | None = None):
+        queries = self.generate_cypher_queries(question, scenario_text)
+        results = self.execute_cypher_queries(queries) if queries else []
+        answer = self.answer_from_cypher(question, scenario_text, results)
+        return {
+            "answer": answer,
+            "queries": queries,
+            "results": results,
         }

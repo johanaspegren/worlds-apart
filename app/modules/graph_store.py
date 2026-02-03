@@ -4,7 +4,7 @@ import logging
 from typing import Dict, List
 from neo4j import GraphDatabase
 
-from modules.schemas.graph_schema import Entity, Relation, GraphResult
+from app.modules.schemas.graph_schema import Entity, Relation, GraphResult
 
 
 class GraphStore:
@@ -14,6 +14,16 @@ class GraphStore:
 
     def close(self):
         self.driver.close()
+
+    def has_data(self) -> bool:
+        with self.driver.session() as session:
+            count = session.run("MATCH (n) RETURN count(n) AS c").single()["c"]
+        return count > 0
+
+    def run_cypher(self, cypher: str, params: dict | None = None) -> List[Dict]:
+        with self.driver.session() as session:
+            rows = session.run(cypher, **(params or {})).data()
+        return rows or []
 
     def clear_graph(self):
         with self.driver.session() as session:
@@ -47,6 +57,30 @@ class GraphStore:
             "relationships": rel_types,
             "properties": {k: sorted(list(v)) for k, v in label_props.items()},
         }
+
+    @staticmethod
+    def get_supply_chain_ontology_text() -> str:
+        return (
+            "Nodes:\n"
+            "- Product {id, name}\n"
+            "- Component {id, name}\n"
+            "- Supplier {id, name, country}\n"
+            "- Factory {id, name, country}\n"
+            "- Port {id, name, country}\n"
+            "- Country {name}\n\n"
+            "Relationships:\n"
+            "- (Product)-[:USES]->(Component)\n"
+            "- (Component)-[:SUPPLIED_BY]->(Supplier)\n"
+            "- (Factory)-[:PRODUCES]->(Product)\n"
+            "- (Supplier)-[:LOCATED_IN]->(Country)\n"
+            "- (Factory)-[:LOCATED_IN]->(Country)\n"
+            "- (Port)-[:LOCATED_IN]->(Country)\n"
+            "- (Supplier)-[:SHIPS_TO {row_id, cost_usd, time_days, co2_kg}]->(Factory)\n"
+            "- (Factory)-[:EXPORTS_VIA {row_id, cost_usd, time_days, co2_kg}]->(Port)\n"
+            "- (Port)-[:IMPORTS_TO {row_id, cost_usd, time_days, co2_kg}]->(Country)\n\n"
+            "IDs:\n"
+            "- product_id, component_id, supplier_id, factory_id, port_id are node ids.\n"
+        )
 
     # ---------------------------------------------------------
     # INGEST GRAPHRESULT INTO NEO4J
@@ -257,8 +291,7 @@ class GraphStore:
         cypher = """
             MATCH (a {id:$id1})-[r]-(b {id:$id2})
             RETURN type(r) AS rel_type,
-                r.source_span AS source_span,
-                r.confidence AS confidence
+                properties(r) AS rel_props
         """
 
         params = {"id1": id1, "id2": id2}
