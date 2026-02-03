@@ -33,6 +33,24 @@
         <input type="number" id="maxLeadTime" min="0" value="20" />
       </div>
     </div>
+    <div class="llm-controls">
+      <div class="control">
+        <label for="llmProvider">LLM provider</label>
+        <select id="llmProvider">
+          <option value="openai" selected>OpenAI</option>
+          <option value="ollama">Ollama</option>
+        </select>
+      </div>
+      <div class="control">
+        <label for="llmModel">Chat model</label>
+        <input type="text" id="llmModel" value="gpt-4o-mini" />
+      </div>
+      <div class="control">
+        <label for="llmEmbedModel">Embed model</label>
+        <input type="text" id="llmEmbedModel" value="text-embedding-3-small" />
+      </div>
+      <div class="llm-hint">Changing models requires re-uploading data.</div>
+    </div>
   </header>
 
   <main>
