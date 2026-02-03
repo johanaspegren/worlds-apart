@@ -30,7 +30,7 @@
       </div>
       <div class="control">
         <label for="maxLeadTime">Max lead time (days)</label>
-        <input type="number" id="maxLeadTime" min="0" value="20" />
+        <input type="number" id="maxLeadTime" min="0" value="0" />
       </div>
     </div>
     <div class="llm-controls">
@@ -69,6 +69,12 @@
       <h3>GraphRAG Trace</h3>
       <div id="traceSummary">No trace yet.</div>
       <ul id="traceList"></ul>
+    </section>
+
+    <section class="trace-section">
+      <h3>GraphRAG Queries</h3>
+      <div id="querySummary">No queries yet.</div>
+      <div id="queryList"></div>
     </section>
   </main>
 

@@ -1,49 +1,89 @@
 {
   "answer": [
-    "There are no available suppliers for the Control Chip that can ship to a factory in Poland within the maximum lead time",
-    "of 20 days. Therefore, the cheapest way to get Control Chip to a factory in Poland cannot be determined."
+    "The products impacted by an asteroid impact in Vietnam are those supplied by suppliers located in Vietnam. The Cypher results indicate the following products are supplied by those suppliers:",
+    "",
+    "1. Product Alpha (P1)",
+    "2. Product Beta (P2)",
+    "3. Product Gamma (P3)",
+    "",
+    "Since all these products are associated with suppliers in Vietnam, none of them are unaffected by the asteroid impact.",
+    "",
+    "Therefore, there are no products that are not impacted by an asteroid impact in Vietnam based on the provided data."
   ],
-  "scenario": "Max lead time is 20 days.",
+  "scenario": "No scenario constraints applied.",
   "queries": [
     {
-      "cypher": "MATCH (p:Product {name: $product_name})-[:USES]->(c:Component)<-[:SUPPLIED_BY]-(s:Supplier)-[:LOCATED_IN]->(country:Country) MATCH (f:Factory)-[:LOCATED_IN]->(country) MATCH (s)-[ship:SHIPS_TO]->(f) WHERE ship.time_days <= $max_lead_time RETURN s.name AS Supplier, f.name AS Factory, ship.cost_usd AS ShippingCost ORDER BY ship.cost_usd LIMIT 50",
+      "cypher": "MATCH (p:Product)-[:USES]->(comp:Component)-[:SUPPLIED_BY]->(s:Supplier)-[:LOCATED_IN]->(c:Country {name: $country_name}) RETURN p.id AS product_id, p.name AS product_name LIMIT 50",
       "params": {
-        "product_name": "Control Chip",
-        "max_lead_time": "20"
+        "country_name": "Vietnam"
       },
-      "reason": "Find suppliers for Control Chip with shipping to factories in the same country."
-    },
-    {
-      "cypher": "MATCH (p:Product {name: $product_name})-[:USES]->(c:Component)<-[:SUPPLIED_BY]-(s:Supplier)-[:LOCATED_IN]->(country:Country) MATCH (f:Factory)-[:LOCATED_IN]->(country) MATCH (s)-[ship:SHIPS_TO]->(f) WHERE ship.time_days <= $max_lead_time RETURN COUNT(s) AS SupplierCount ORDER BY SupplierCount DESC LIMIT 1",
-      "params": {
-        "product_name": "Control Chip",
-        "max_lead_time": "20"
-      },
-      "reason": "Count suppliers to ensure there are options available."
+      "reason": "Finding products that are supplied by suppliers located in Vietnam."
     }
   ],
   "results": [
     {
-      "cypher": "MATCH (p:Product {name: $product_name})-[:USES]->(c:Component)<-[:SUPPLIED_BY]-(s:Supplier)-[:LOCATED_IN]->(country:Country) MATCH (f:Factory)-[:LOCATED_IN]->(country) MATCH (s)-[ship:SHIPS_TO]->(f) WHERE ship.time_days <= $max_lead_time RETURN s.name AS Supplier, f.name AS Factory, ship.cost_usd AS ShippingCost ORDER BY ship.cost_usd LIMIT 50",
+      "cypher": "MATCH (p:Product)-[:USES]->(comp:Component)-[:SUPPLIED_BY]->(s:Supplier)-[:LOCATED_IN]->(c:Country {name: $country_name}) RETURN p.id AS product_id, p.name AS product_name LIMIT 50",
       "params": {
-        "product_name": "Control Chip",
-        "max_lead_time": "20"
+        "country_name": "Vietnam"
       },
-      "reason": "Find suppliers for Control Chip with shipping to factories in the same country.",
-      "row_count": 0,
-      "rows": []
-    },
-    {
-      "cypher": "MATCH (p:Product {name: $product_name})-[:USES]->(c:Component)<-[:SUPPLIED_BY]-(s:Supplier)-[:LOCATED_IN]->(country:Country) MATCH (f:Factory)-[:LOCATED_IN]->(country) MATCH (s)-[ship:SHIPS_TO]->(f) WHERE ship.time_days <= $max_lead_time RETURN COUNT(s) AS SupplierCount ORDER BY SupplierCount DESC LIMIT 1",
-      "params": {
-        "product_name": "Control Chip",
-        "max_lead_time": "20"
-      },
-      "reason": "Count suppliers to ensure there are options available.",
-      "row_count": 1,
+      "reason": "Finding products that are supplied by suppliers located in Vietnam.",
+      "row_count": 14,
       "rows": [
         {
-          "SupplierCount": 0
+          "product_id": "P1",
+          "product_name": "Product Alpha"
+        },
+        {
+          "product_id": "P1",
+          "product_name": "Product Alpha"
+        },
+        {
+          "product_id": "P1",
+          "product_name": "Product Alpha"
+        },
+        {
+          "product_id": "P2",
+          "product_name": "Product Beta"
+        },
+        {
+          "product_id": "P2",
+          "product_name": "Product Beta"
+        },
+        {
+          "product_id": "P3",
+          "product_name": "Product Gamma"
+        },
+        {
+          "product_id": "P3",
+          "product_name": "Product Gamma"
+        },
+        {
+          "product_id": "P1",
+          "product_name": "Product Alpha"
+        },
+        {
+          "product_id": "P1",
+          "product_name": "Product Alpha"
+        },
+        {
+          "product_id": "P1",
+          "product_name": "Product Alpha"
+        },
+        {
+          "product_id": "P2",
+          "product_name": "Product Beta"
+        },
+        {
+          "product_id": "P2",
+          "product_name": "Product Beta"
+        },
+        {
+          "product_id": "P3",
+          "product_name": "Product Gamma"
+        },
+        {
+          "product_id": "P3",
+          "product_name": "Product Gamma"
         }
       ]
     }

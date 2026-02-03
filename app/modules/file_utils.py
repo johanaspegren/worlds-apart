@@ -40,6 +40,15 @@ def log_json(file_path: str, data_to_save: Dict) -> None:
         print(f"Error saving file: {e}")
 
 
+def log_text(file_path: str, content: str) -> None:
+    try:
+        with open(file_path, "w") as handle:
+            handle.write(content)
+        print(f"Text saved to {file_path}")
+    except IOError as e:
+        print(f"Error saving file: {e}")
+
+
 def log_cypher_queries(file_path: str, queries: Iterable[Dict[str, Any]]) -> None:
     try:
         lines: list[str] = []

@@ -1,116 +1,12 @@
 {
-  "answer": [
-    "The cheapest way to get the Control Chip to a factory in Poland is from Supplier A in Germany. The shipping cost is",
-    "$2.9, and it takes 6 days to ship to Factory Poland."
-  ],
-  "notes": [
-    {
-      "id": 2,
-      "score": 0.6535985224187714,
-      "text": [
-        "For Product Alpha, the component Control Chip is supplied by Supplier B in Taiwan.",
-        "It is shipped to Factory Poland at a cost of $4.2, taking 18 days and emitting 12.0 kg CO₂.",
-        "The factory exports via Port Gdansk, costing $1.1, taking 3 days and emitting 2.5 kg CO₂.",
-        "The shipment is imported to Germany with cost $0.8, time 2 days and emissions 1.2 kg CO₂."
-      ]
-    },
-    {
-      "id": 4,
-      "score": 0.6504989296256208,
-      "text": [
-        "For Product Alpha, the component Control Chip is supplied by Supplier A in Germany.",
-        "It is shipped to Factory Poland at a cost of $2.9, taking 6 days and emitting 3.5 kg CO₂.",
-        "The factory exports via Port Gdansk, costing $1.1, taking 3 days and emitting 2.5 kg CO₂.",
-        "The shipment is imported to Germany with cost $0.8, time 2 days and emissions 1.2 kg CO₂."
-      ]
-    },
-    {
-      "id": 3,
-      "score": 0.6286745892637469,
-      "text": [
-        "For Product Alpha, the component Control Chip is supplied by Supplier D in Vietnam.",
-        "It is shipped to Factory Poland at a cost of $5.1, taking 22 days and emitting 18.0 kg CO₂.",
-        "The factory exports via Port Rotterdam, costing $1.6, taking 5 days and emitting 2.0 kg CO₂.",
-        "The shipment is imported to Germany with cost $0.6, time 1 days and emissions 0.9 kg CO₂."
-      ]
-    },
-    {
-      "id": 11,
-      "score": 0.6254450783802189,
-      "text": [
-        "For Product Gamma, the component Control Chip is supplied by Supplier B in Taiwan.",
-        "It is shipped to Factory Poland at a cost of $4.1, taking 17 days and emitting 11.6 kg CO₂.",
-        "The factory exports via Port Gdansk, costing $1.1, taking 3 days and emitting 2.5 kg CO₂.",
-        "The shipment is imported to Germany with cost $0.8, time 2 days and emissions 1.2 kg CO₂."
-      ]
-    },
-    {
-      "id": 12,
-      "score": 0.6157140708260552,
-      "text": [
-        "For Product Gamma, the component Control Chip is supplied by Supplier A in Germany.",
-        "It is shipped to Factory Poland at a cost of $3.1, taking 7 days and emitting 3.9 kg CO₂.",
-        "The factory exports via Port Gdansk, costing $1.1, taking 3 days and emitting 2.5 kg CO₂.",
-        "The shipment is imported to Germany with cost $0.8, time 2 days and emissions 1.2 kg CO₂."
-      ]
-    }
-  ],
+  "answer": "NA",
+  "notes": [],
   "retrieval": {
-    "top_k": 5,
-    "matches": [
-      {
-        "id": 2,
-        "score": 0.6535985224187714,
-        "text": [
-          "For Product Alpha, the component Control Chip is supplied by Supplier B in Taiwan.",
-          "It is shipped to Factory Poland at a cost of $4.2, taking 18 days and emitting 12.0 kg CO₂.",
-          "The factory exports via Port Gdansk, costing $1.1, taking 3 days and emitting 2.5 kg CO₂.",
-          "The shipment is imported to Germany with cost $0.8, time 2 days and emissions 1.2 kg CO₂."
-        ]
-      },
-      {
-        "id": 4,
-        "score": 0.6504989296256208,
-        "text": [
-          "For Product Alpha, the component Control Chip is supplied by Supplier A in Germany.",
-          "It is shipped to Factory Poland at a cost of $2.9, taking 6 days and emitting 3.5 kg CO₂.",
-          "The factory exports via Port Gdansk, costing $1.1, taking 3 days and emitting 2.5 kg CO₂.",
-          "The shipment is imported to Germany with cost $0.8, time 2 days and emissions 1.2 kg CO₂."
-        ]
-      },
-      {
-        "id": 3,
-        "score": 0.6286745892637469,
-        "text": [
-          "For Product Alpha, the component Control Chip is supplied by Supplier D in Vietnam.",
-          "It is shipped to Factory Poland at a cost of $5.1, taking 22 days and emitting 18.0 kg CO₂.",
-          "The factory exports via Port Rotterdam, costing $1.6, taking 5 days and emitting 2.0 kg CO₂.",
-          "The shipment is imported to Germany with cost $0.6, time 1 days and emissions 0.9 kg CO₂."
-        ]
-      },
-      {
-        "id": 11,
-        "score": 0.6254450783802189,
-        "text": [
-          "For Product Gamma, the component Control Chip is supplied by Supplier B in Taiwan.",
-          "It is shipped to Factory Poland at a cost of $4.1, taking 17 days and emitting 11.6 kg CO₂.",
-          "The factory exports via Port Gdansk, costing $1.1, taking 3 days and emitting 2.5 kg CO₂.",
-          "The shipment is imported to Germany with cost $0.8, time 2 days and emissions 1.2 kg CO₂."
-        ]
-      },
-      {
-        "id": 12,
-        "score": 0.6157140708260552,
-        "text": [
-          "For Product Gamma, the component Control Chip is supplied by Supplier A in Germany.",
-          "It is shipped to Factory Poland at a cost of $3.1, taking 7 days and emitting 3.9 kg CO₂.",
-          "The factory exports via Port Gdansk, costing $1.1, taking 3 days and emitting 2.5 kg CO₂.",
-          "The shipment is imported to Germany with cost $0.8, time 2 days and emissions 1.2 kg CO₂."
-        ]
-      }
-    ]
+    "top_k": 0,
+    "matches": []
   },
-  "scenario": "Max lead time is 20 days.",
-  "llm_provider": "openai",
-  "llm_model": "gpt-4o-mini"
+  "scenario": "No scenario constraints applied.",
+  "llm_provider": null,
+  "llm_model": null,
+  "disabled": true
 }

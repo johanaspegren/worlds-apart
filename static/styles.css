@@ -126,6 +126,51 @@ main {
   border-radius: 6px;
 }
 
+#queryList {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.query-block {
+  border: 1px solid #e0e8f0;
+  background: #f8fbff;
+  border-radius: 10px;
+  padding: 12px;
+}
+
+.query-heading {
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.query-cypher,
+.query-params,
+.query-rows,
+.query-error {
+  background: #0b1f33;
+  color: #d8e7ff;
+  padding: 10px;
+  border-radius: 8px;
+  white-space: pre-wrap;
+  margin: 8px 0 0 0;
+}
+
+.query-meta {
+  margin-top: 8px;
+  font-size: 0.9rem;
+  color: #52606d;
+}
+
+.query-error {
+  background: #fff2f2;
+  color: #8a1f1f;
+}
+
+.query-empty {
+  color: #52606d;
+}
+
 .chat-panel {
   display: flex;
   gap: 12px;

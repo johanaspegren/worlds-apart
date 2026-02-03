@@ -14,7 +14,7 @@ from app.modules.prompts.query_prompts import (
     ANSWER_PROMPT,
 )
 
-from app.modules.file_utils import log_json, log_cypher_queries
+from app.modules.file_utils import log_json, log_cypher_queries, log_text
 
 
 class CypherParam(BaseModel):
@@ -68,6 +68,43 @@ class QueryAgent:
 
         # CASE 3: Totally unexpected / fail-safe fallback
         return []
+
+    def resolve_entities(self, mentions: list[str]) -> dict:
+        resolved: dict[str, dict] = {}
+        for mention in mentions:
+            matches = self.graph_store.find_name_matches(mention)
+            if len(matches) == 1:
+                match = matches[0]
+                labels = match.get("labels") or []
+                label = labels[0] if labels else None
+                resolved[mention] = {
+                    "status": "resolved",
+                    "label": label,
+                    "id": match.get("id"),
+                    "name": match.get("name"),
+                }
+            elif len(matches) > 1:
+                candidates = []
+                for match in matches:
+                    labels = match.get("labels") or []
+                    label = labels[0] if labels else None
+                    candidates.append(
+                        {
+                            "label": label,
+                            "id": match.get("id"),
+                            "name": match.get("name"),
+                        }
+                    )
+                resolved[mention] = {
+                    "status": "ambiguous",
+                    "candidates": candidates,
+                }
+            else:
+                resolved[mention] = {
+                    "status": "unresolved",
+                    "name": mention,
+                }
+        return resolved
 
     # ---------------------------
     # 2. Resolve mentions → nodes
@@ -168,12 +205,17 @@ class QueryAgent:
     # ---------------------------
     def generate_cypher_queries(self, question: str, scenario_text: str | None = None):
         schema_text = self.graph_store.get_supply_chain_ontology_text()
+        schema_summary = self.graph_store.get_schema_summary()
+        mentions = self.extract_mentions(question)
+        resolved_entities = self.resolve_entities(mentions)
         prompt = CYPHER_PROMPT.format(
             SCHEMA=schema_text,
+            SCHEMA_SUMMARY=schema_summary,
+            RESOLVED_ENTITIES=resolved_entities or "No entities resolved.",
             SCENARIO=scenario_text or "No scenario constraints applied.",
             QUESTION=question,
         )
-        log_json("cypher_prompt.json", {"prompt": prompt})
+        log_text("cypher_prompt.txt", prompt)
         result = self.llm.call_schema_prompt(prompt, CypherQueryList)
         log_json("cypher_prompt_result.json", {"result": result})
 
@@ -200,18 +242,41 @@ class QueryAgent:
         results = []
         for query in queries:
             cypher = query["cypher"]
+            cypher = self._ensure_rel_var(cypher, "ship", "SHIPS_TO")
+            cypher = self._ensure_rel_var(cypher, "export", "EXPORTS_VIA")
+            cypher = self._ensure_rel_var(cypher, "import", "IMPORTS_TO")
             params = query.get("params") or {}
-            rows = self.graph_store.run_cypher(cypher, params)
-            results.append(
-                {
-                    "cypher": cypher,
-                    "params": params,
-                    "reason": query.get("reason"),
-                    "row_count": len(rows),
-                    "rows": rows[:50],
-                }
-            )
+            try:
+                rows = self.graph_store.run_cypher(cypher, params)
+                results.append(
+                    {
+                        "cypher": cypher,
+                        "params": params,
+                        "reason": query.get("reason"),
+                        "row_count": len(rows),
+                        "rows": rows[:50],
+                    }
+                )
+            except Exception as exc:
+                results.append(
+                    {
+                        "cypher": cypher,
+                        "params": params,
+                        "reason": query.get("reason"),
+                        "error": str(exc),
+                        "row_count": 0,
+                        "rows": [],
+                    }
+                )
         return results
+
+    @staticmethod
+    def _ensure_rel_var(cypher: str, var: str, rel_type: str) -> str:
+        if f"{var}." in cypher and f"[{var}:" not in cypher:
+            cypher = cypher.replace(f"-[:{rel_type}]->", f"-[{var}:{rel_type}]->")
+            cypher = cypher.replace(f"<-[:{rel_type}]-", f"<-[{var}:{rel_type}]-")
+            cypher = cypher.replace(f"-[:{rel_type}]-", f"-[{var}:{rel_type}]-")
+        return cypher
 
     def answer_from_cypher(self, question: str, scenario_text: str | None, results):
         schema_text = self.graph_store.get_supply_chain_ontology_text()

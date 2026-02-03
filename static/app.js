@@ -4,6 +4,8 @@ const ragOutput = document.getElementById('ragOutput');
 const graphOutput = document.getElementById('graphOutput');
 const traceSummary = document.getElementById('traceSummary');
 const traceList = document.getElementById('traceList');
+const querySummary = document.getElementById('querySummary');
+const queryList = document.getElementById('queryList');
 const chatInput = document.getElementById('chatInput');
 const askButton = document.getElementById('askButton');
 
@@ -91,6 +93,8 @@ async function handleAsk() {
   graphOutput.textContent = 'Thinking...';
   traceSummary.textContent = '';
   traceList.innerHTML = '';
+  querySummary.textContent = '';
+  queryList.innerHTML = '';
   const scenario = getScenario();
 
   try {
@@ -145,8 +149,53 @@ async function handleAsk() {
     } else {
       traceList.innerHTML = '<li>No graph relationships returned.</li>';
     }
+
+    if (graphData.queries && graphData.queries.length) {
+      querySummary.textContent = `Executed ${graphData.queries.length} Cypher queries.`;
+      graphData.queries.forEach((query, index) => {
+        const wrapper = document.createElement('div');
+        wrapper.classList.add('query-block');
+        const heading = document.createElement('div');
+        heading.classList.add('query-heading');
+        heading.textContent = `Query ${index + 1}: ${query.reason || 'No reason provided.'}`;
+        const cypher = document.createElement('pre');
+        cypher.classList.add('query-cypher');
+        cypher.textContent = query.cypher || '';
+        const params = document.createElement('pre');
+        params.classList.add('query-params');
+        params.textContent = `Params: ${JSON.stringify(query.params || {}, null, 2)}`;
+        wrapper.appendChild(heading);
+        wrapper.appendChild(cypher);
+        wrapper.appendChild(params);
+        const result = (graphData.results || []).find((entry) => entry.cypher === query.cypher);
+        if (result) {
+          const meta = document.createElement('div');
+          meta.classList.add('query-meta');
+          const rowCount = typeof result.row_count === 'number' ? result.row_count : 0;
+          meta.textContent = `Rows: ${rowCount}`;
+          wrapper.appendChild(meta);
+          if (result.error) {
+            const error = document.createElement('pre');
+            error.classList.add('query-error');
+            error.textContent = `Error: ${result.error}`;
+            wrapper.appendChild(error);
+          } else {
+            const rows = document.createElement('pre');
+            rows.classList.add('query-rows');
+            rows.textContent = JSON.stringify(result.rows || [], null, 2);
+            wrapper.appendChild(rows);
+          }
+        }
+        queryList.appendChild(wrapper);
+      });
+    } else {
+      querySummary.textContent = 'No Cypher queries returned.';
+      queryList.innerHTML = '<div class="query-empty">No query details available.</div>';
+    }
   } catch (error) {
     ragOutput.textContent = `Error: ${error.message}`;
     graphOutput.textContent = `Error: ${error.message}`;
+    querySummary.textContent = `Error: ${error.message}`;
+    queryList.innerHTML = '';
   }
 }

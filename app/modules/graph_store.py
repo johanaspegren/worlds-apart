@@ -11,6 +11,7 @@ class GraphStore:
     def __init__(self, uri, user, pwd):
         self.driver = GraphDatabase.driver(uri, auth=(user, pwd))
         self.log = logging.getLogger(__name__)
+        self._schema_summary: Dict | None = None
 
     def close(self):
         self.driver.close()
@@ -23,6 +24,20 @@ class GraphStore:
     def run_cypher(self, cypher: str, params: dict | None = None) -> List[Dict]:
         with self.driver.session() as session:
             rows = session.run(cypher, **(params or {})).data()
+        return rows or []
+
+    def find_name_matches(self, term: str, limit: int = 5) -> List[Dict]:
+        with self.driver.session() as session:
+            rows = session.run(
+                """
+                MATCH (n)
+                WHERE n.name = $term
+                RETURN labels(n) AS labels, n.name AS name, n.id AS id
+                LIMIT $limit
+                """,
+                term=term,
+                limit=limit,
+            ).data()
         return rows or []
 
     def clear_graph(self):
@@ -38,6 +53,8 @@ class GraphStore:
     # SCHEMA SUMMARY (unchanged, still useful)
     # ---------------------------------------------------------
     def get_schema_summary(self):
+        if self._schema_summary is not None:
+            return self._schema_summary
         with self.driver.session() as session:
             labels = session.run("CALL db.labels()").value()
             rel_types = session.run("CALL db.relationshipTypes()").value()
@@ -52,11 +69,12 @@ class GraphStore:
             for label in row["nodeLabels"]:
                 label_props.setdefault(label, set()).add(row["propertyName"])
 
-        return {
+        self._schema_summary = {
             "labels": labels,
             "relationships": rel_types,
             "properties": {k: sorted(list(v)) for k, v in label_props.items()},
         }
+        return self._schema_summary
 
     @staticmethod
     def get_supply_chain_ontology_text() -> str:

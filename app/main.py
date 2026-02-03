@@ -196,31 +196,18 @@ def chat_rag(payload: Dict) -> Dict:
     if not question:
         raise HTTPException(status_code=400, detail="Question is required")
 
-    llm_config = resolve_llm_config(
-        payload.get("provider"),
-        payload.get("model"),
-        payload.get("embed_model"),
-    )
-    llm = build_llm(llm_config)
-
-    if not STATE.rows and not dev_persist_enabled():
-        raise HTTPException(status_code=400, detail="No data uploaded")
-
-    ensure_vector_store(llm)
-    retrieved = retrieve_notes(question, llm, STATE.vector_store)
     scenario_text = scenario_summary(scenario)
-    answer = rag_answer(llm, question, scenario_text, retrieved)
-
-    retval =  {
-        "answer": answer,
-        "notes": retrieved,
+    retval = {
+        "answer": "NA",
+        "notes": [],
         "retrieval": {
-            "top_k": len(retrieved),
-            "matches": retrieved,
+            "top_k": 0,
+            "matches": [],
         },
         "scenario": scenario_text,
-        "llm_provider": llm_config.provider,
-        "llm_model": llm_config.model,
+        "llm_provider": None,
+        "llm_model": None,
+        "disabled": True,
     }
     log_json("rag_response.json", retval)
     return retval
