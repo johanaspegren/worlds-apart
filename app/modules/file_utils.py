@@ -32,19 +32,19 @@ def _make_serializable(value: Any, max_width: int = 120, key: str | None = None)
 
 def log_json(file_path: str, data_to_save: Dict) -> None:
     try:
-        with open(file_path, 'w') as json_file:
+        with open("logs/" + file_path, 'w') as json_file:
             serializable = _make_serializable(data_to_save)
             json.dump(serializable, json_file, indent=2, ensure_ascii=False)
-        print(f"Data successfully saved to {file_path}")
+        print(f"Data successfully saved to logs/{file_path}")
     except IOError as e:
         print(f"Error saving file: {e}")
 
 
 def log_text(file_path: str, content: str) -> None:
     try:
-        with open(file_path, "w") as handle:
+        with open("logs/" + file_path, "w") as handle:
             handle.write(content)
-        print(f"Text saved to {file_path}")
+        print(f"Text saved to logs/{file_path}")
     except IOError as e:
         print(f"Error saving file: {e}")
 
@@ -85,7 +85,7 @@ def log_cypher_queries(file_path: str, queries: Iterable[Dict[str, Any]]) -> Non
                 lines.append(";")
             lines.append("")
 
-        with open(file_path, "w") as cypher_file:
+        with open("logs/" + file_path, "w") as cypher_file:
             cypher_file.write("\n".join(lines).rstrip() + "\n")
         print(f"Cypher queries saved to {file_path}")
     except IOError as e:

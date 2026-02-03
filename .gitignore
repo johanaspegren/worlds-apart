@@ -8,7 +8,7 @@ __pycache__/
 
 # temp
 *.txt
-
+logs/*.json
 
 # Distribution / packaging
 .Python

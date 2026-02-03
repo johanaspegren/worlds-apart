@@ -88,7 +88,6 @@ class GraphStore:
             "- Country {name}\n\n"
             "Relationships:\n"
             "- (Product)-[:USES]->(Component)\n"
-            "- (Component)-[:SUPPLIED_BY]->(Supplier)\n"
             "- (Supplier)-[:SUPPLIES]->(Component)\n"
             "- (Factory)-[:PRODUCES]->(Product)\n"
             "- (Supplier)-[:LOCATED_IN]->(Country)\n"

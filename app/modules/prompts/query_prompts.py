@@ -88,7 +88,6 @@ CYPHER_PROMPT = """
     Canonical direction patterns (COPY EXACTLY):
     - USES:        (p:Product)-[:USES]->(comp:Component)
     - SUPPLIES:    (s:Supplier)-[:SUPPLIES]->(comp:Component)
-    - SUPPLIED_BY: (comp:Component)-[:SUPPLIED_BY]->(s:Supplier)
     - PRODUCES:    (f:Factory)-[:PRODUCES]->(p:Product)
     - LOCATED_IN:  (x)-[:LOCATED_IN]->(c:Country)
     - SHIPS_TO:    (s:Supplier)-[:SHIPS_TO]->(f:Factory)
@@ -96,7 +95,6 @@ CYPHER_PROMPT = """
     - IMPORTS_TO:  (port:Port)-[:IMPORTS_TO]->(c:Country)
 
     Forbidden (WRONG) patterns:
-    - (s:Supplier)-[:SUPPLIED_BY]->(:Component)
     - (:Component)-[:SUPPLIES]->(:Supplier)
     - (:Product)-[:PRODUCES]->(:Factory)
     - (:Country)-[:LOCATED_IN]->(:Supplier)
