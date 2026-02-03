@@ -11,6 +11,9 @@ const supplierOutage = document.getElementById('supplierOutage');
 const carbonTaxEnabled = document.getElementById('carbonTaxEnabled');
 const carbonTaxRate = document.getElementById('carbonTaxRate');
 const maxLeadTime = document.getElementById('maxLeadTime');
+const llmProvider = document.getElementById('llmProvider');
+const llmModel = document.getElementById('llmModel');
+const llmEmbedModel = document.getElementById('llmEmbedModel');
 
 const uploadLabel = document.querySelector('.upload-label');
 
@@ -56,6 +59,9 @@ async function handleUpload() {
   const file = fileInput.files[0];
   const formData = new FormData();
   formData.append('file', file);
+  formData.append('provider', llmProvider.value);
+  formData.append('model', llmModel.value);
+  formData.append('embed_model', llmEmbedModel.value);
   uploadStatus.textContent = 'Uploading and rebuilding world...';
   try {
     const response = await fetch('/data/upload', {
@@ -66,7 +72,7 @@ async function handleUpload() {
     if (!response.ok) {
       throw new Error(data.detail || 'Upload failed');
     }
-    uploadStatus.textContent = `Upload complete. ${data.rows_loaded} rows loaded.`;
+    uploadStatus.textContent = `Upload complete. ${data.rows_loaded} rows loaded. LLM: ${data.llm_provider} (${data.llm_model}).`;
     ragOutput.textContent = 'Upload data and ask a question.';
     graphOutput.textContent = 'Upload data and ask a question.';
     traceSummary.textContent = 'World rebuilt. No trace yet.';
@@ -92,12 +98,24 @@ async function handleAsk() {
       fetch('/chat/rag', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question, scenario }),
+        body: JSON.stringify({
+          question,
+          scenario,
+          provider: llmProvider.value,
+          model: llmModel.value,
+          embed_model: llmEmbedModel.value,
+        }),
       }),
       fetch('/chat/graphrag', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question, scenario }),
+        body: JSON.stringify({
+          question,
+          scenario,
+          provider: llmProvider.value,
+          model: llmModel.value,
+          embed_model: llmEmbedModel.value,
+        }),
       }),
     ]);
 
@@ -117,11 +135,15 @@ async function handleAsk() {
     if (graphData.trace && graphData.trace.length) {
       graphData.trace.forEach((trace) => {
         const item = document.createElement('li');
-        item.textContent = `Row ${trace.row_id}: ${trace.product} / ${trace.component} / ${trace.supplier} - ${trace.reason}`;
+        if (trace.summary) {
+          item.textContent = trace.summary;
+        } else {
+          item.textContent = `${trace.rel_type || 'REL'} ${trace.source_span || ''}`.trim();
+        }
         traceList.appendChild(item);
       });
     } else {
-      traceList.innerHTML = '<li>No exclusions for this scenario.</li>';
+      traceList.innerHTML = '<li>No graph relationships returned.</li>';
     }
   } catch (error) {
     ragOutput.textContent = `Error: ${error.message}`;

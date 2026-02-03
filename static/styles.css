@@ -52,6 +52,25 @@ body {
   align-items: center;
 }
 
+.llm-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.llm-controls .control {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.llm-hint {
+  font-size: 0.85rem;
+  color: #c8e1ff;
+}
+
 .control {
   display: flex;
   gap: 8px;

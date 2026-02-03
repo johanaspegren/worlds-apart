@@ -26,6 +26,9 @@ EXPLAIN_PROMPT = """
     Relationships:
     {RELATIONS}
 
+    Scenario:
+    {SCENARIO}
+
     Rules:
     - Mention which canonical entities were matched.
     - Mention if aliases were used.

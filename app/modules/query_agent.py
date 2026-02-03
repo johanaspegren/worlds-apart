@@ -74,7 +74,7 @@ class QueryAgent:
     # ---------------------------
     # 4. Explanation
     # ---------------------------
-    def explain(self, question: str, connection):
+    def explain(self, question: str, connection, scenario_text: str | None = None):
         ent_txt = str(connection["entity1"]) + "\n" + str(connection["entity2"])
         rel_txt = str(connection["relationships"])
 
@@ -82,13 +82,14 @@ class QueryAgent:
             ENTITIES=ent_txt,
             RELATIONS=rel_txt,
             QUESTION=question,
+            SCENARIO=scenario_text or "No scenario constraints applied.",
         )
         return self.llm.call(prompt)
 
     # ---------------------------
     # MAIN ENTRYPOINT
     # ---------------------------
-    def ask(self, question: str):
+    def ask(self, question: str, scenario_text: str | None = None):
         self.log.info("Reasoning QueryAgent: starting")
 
         # 1. Extract mentions
@@ -115,7 +116,7 @@ class QueryAgent:
             }
 
         # 4. Build explanation
-        explanation = self.explain(question, connection)
+        explanation = self.explain(question, connection, scenario_text)
 
         return {
             "answer": explanation,
@@ -126,4 +127,3 @@ class QueryAgent:
             "cypher": connection["cypher"],
             "params": connection["params"]
         }
-

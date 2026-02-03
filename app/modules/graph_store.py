@@ -1,7 +1,7 @@
 # modules/graph_store.py
 
 import logging
-from typing import List
+from typing import Dict, List
 from neo4j import GraphDatabase
 
 from modules.schemas.graph_schema import Entity, Relation, GraphResult
@@ -14,6 +14,15 @@ class GraphStore:
 
     def close(self):
         self.driver.close()
+
+    def clear_graph(self):
+        with self.driver.session() as session:
+            session.run("MATCH (n) DETACH DELETE n")
+
+    def insert_supply_chain(self, rows: List[Dict]):
+        self.log.info("Neo4j insert_supply_chain: %d rows", len(rows))
+        with self.driver.session() as session:
+            session.execute_write(self._upsert_supply_chain, rows)
 
     # ---------------------------------------------------------
     # SCHEMA SUMMARY (unchanged, still useful)
@@ -138,6 +147,58 @@ class GraphStore:
                     "confidence": r["confidence"],
                 },
             )
+
+    @staticmethod
+    def _upsert_supply_chain(tx, rows: List[Dict]):
+        cypher = """
+            MERGE (product:Product {id: $product_id})
+            SET product.name = $product_name
+
+            MERGE (component:Component {id: $component_id})
+            SET component.name = $component_name
+
+            MERGE (supplier:Supplier {id: $supplier_id})
+            SET supplier.name = $supplier_name,
+                supplier.country = $supplier_country
+
+            MERGE (factory:Factory {id: $factory_id})
+            SET factory.name = $factory_name,
+                factory.country = $factory_country
+
+            MERGE (port:Port {id: $port_id})
+            SET port.name = $port_name,
+                port.country = $port_country
+
+            MERGE (supplier_country:Country {name: $supplier_country})
+            MERGE (factory_country:Country {name: $factory_country})
+            MERGE (port_country:Country {name: $port_country})
+            MERGE (market_country:Country {name: $market_country})
+
+            MERGE (product)-[:USES {row_id: $row_id}]->(component)
+            MERGE (component)-[:SUPPLIED_BY {row_id: $row_id}]->(supplier)
+            MERGE (factory)-[:PRODUCES {row_id: $row_id}]->(product)
+
+            MERGE (supplier)-[:LOCATED_IN]->(supplier_country)
+            MERGE (factory)-[:LOCATED_IN]->(factory_country)
+            MERGE (port)-[:LOCATED_IN]->(port_country)
+
+            MERGE (supplier)-[ship:SHIPS_TO {row_id: $row_id}]->(factory)
+            SET ship.cost_usd = $ship_cost_usd,
+                ship.time_days = $ship_time_days,
+                ship.co2_kg = $ship_co2_kg
+
+            MERGE (factory)-[export:EXPORTS_VIA {row_id: $row_id}]->(port)
+            SET export.cost_usd = $export_cost_usd,
+                export.time_days = $export_time_days,
+                export.co2_kg = $export_co2_kg
+
+            MERGE (port)-[import:IMPORTS_TO {row_id: $row_id}]->(market_country)
+            SET import.cost_usd = $import_cost_usd,
+                import.time_days = $import_time_days,
+                import.co2_kg = $import_co2_kg
+        """
+        for row in rows:
+            tx.run(cypher, **row)
 
     # ---------------------------------------------------------
     # ENTITY RESOLUTION HELPERS

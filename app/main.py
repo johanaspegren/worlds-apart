@@ -1,15 +1,21 @@
 import csv
 import io
-import math
 import os
-import re
 from dataclasses import dataclass, field
 from typing import Dict, List, Tuple
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from dotenv import load_dotenv
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from openpyxl import load_workbook
+
+from modules.graph_store import GraphStore
+from modules.llm_handler import LLMHandler
+from modules.query_agent import QueryAgent
+from modules.vector_store import SimpleVectorStore
+
+load_dotenv()
 
 REQUIRED_COLUMNS = [
     "product_id",
@@ -53,39 +59,25 @@ NOTES_DIR = "notes"
 
 
 @dataclass
-class GraphStore:
-    nodes: Dict[str, set] = field(default_factory=lambda: {
-        "product": set(),
-        "component": set(),
-        "supplier": set(),
-        "factory": set(),
-        "port": set(),
-        "country": set(),
-    })
-    edges: List[Dict] = field(default_factory=list)
-
-
-@dataclass
-class VectorIndex:
-    vocabulary: Dict[str, int] = field(default_factory=dict)
-    idf: List[float] = field(default_factory=list)
-    vectors: List[List[float]] = field(default_factory=list)
-    note_ids: List[int] = field(default_factory=list)
+class LLMConfig:
+    provider: str
+    model: str
+    embed_model: str
 
 
 @dataclass
 class WorldState:
     rows: List[Dict] = field(default_factory=list)
     notes: Dict[int, str] = field(default_factory=dict)
-    graph: GraphStore = field(default_factory=GraphStore)
-    vector_index: VectorIndex = field(default_factory=VectorIndex)
+    vector_store: SimpleVectorStore = field(default_factory=SimpleVectorStore)
     last_scenario: Dict = field(default_factory=dict)
+    llm_config: LLMConfig | None = None
+    graph_store: GraphStore | None = None
 
     def reset(self) -> None:
         self.rows = []
         self.notes = {}
-        self.graph = GraphStore()
-        self.vector_index = VectorIndex()
+        self.vector_store = SimpleVectorStore()
         self.last_scenario = {}
 
 
@@ -101,7 +93,12 @@ def index() -> HTMLResponse:
 
 
 @app.post("/data/upload")
-def upload_data(file: UploadFile = File(...)) -> Dict:
+def upload_data(
+    file: UploadFile = File(...),
+    provider: str | None = Form(default=None),
+    model: str | None = Form(default=None),
+    embed_model: str | None = Form(default=None),
+) -> Dict:
     STATE.reset()
     filename = file.filename or ""
     content = file.file.read()
@@ -116,12 +113,36 @@ def upload_data(file: UploadFile = File(...)) -> Dict:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     STATE.rows = rows
-    build_graph_store(rows)
     build_notes(rows)
-    build_vector_index()
+
+    llm_config = resolve_llm_config(provider, model, embed_model)
+    STATE.llm_config = llm_config
+
+    llm = build_llm(llm_config)
+    try:
+        STATE.vector_store = build_vector_store(llm)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Embedding ingestion failed: {exc}") from exc
+
+    try:
+        graph_store = get_graph_store()
+        graph_store.clear_graph()
+        graph_store.insert_supply_chain(rows)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Neo4j ingestion failed: {exc}") from exc
+
     STATE.last_scenario = {}
 
-    return {"status": "ok", "rows_loaded": len(rows), "schema_valid": True}
+    return {
+        "status": "ok",
+        "rows_loaded": len(rows),
+        "schema_valid": True,
+        "llm_provider": llm_config.provider,
+        "llm_model": llm_config.model,
+        "embed_model": llm_config.embed_model,
+    }
 
 
 @app.post("/chat/rag")
@@ -130,10 +151,26 @@ def chat_rag(payload: Dict) -> Dict:
     scenario = payload.get("scenario") or {}
     if not STATE.rows:
         raise HTTPException(status_code=400, detail="No data uploaded")
-    retrieved = retrieve_notes(question)
+    if not question:
+        raise HTTPException(status_code=400, detail="Question is required")
+
+    llm_config = resolve_llm_config(
+        payload.get("provider"),
+        payload.get("model"),
+        payload.get("embed_model"),
+    )
+    llm = build_llm(llm_config)
+
+    retrieved = retrieve_notes(question, llm, STATE.vector_store)
     scenario_text = scenario_summary(scenario)
-    answer = rag_answer(question, scenario_text, retrieved)
-    return {"answer": answer, "notes": retrieved, "scenario": scenario_text}
+    answer = rag_answer(llm, question, scenario_text, retrieved)
+    return {
+        "answer": answer,
+        "notes": retrieved,
+        "scenario": scenario_text,
+        "llm_provider": llm_config.provider,
+        "llm_model": llm_config.model,
+    }
 
 
 @app.post("/chat/graphrag")
@@ -142,8 +179,47 @@ def chat_graphrag(payload: Dict) -> Dict:
     scenario = payload.get("scenario") or {}
     if not STATE.rows:
         raise HTTPException(status_code=400, detail="No data uploaded")
-    response = graphrag_answer(question, scenario)
-    return response
+    if not question:
+        raise HTTPException(status_code=400, detail="Question is required")
+
+    llm_config = resolve_llm_config(
+        payload.get("provider"),
+        payload.get("model"),
+        payload.get("embed_model"),
+    )
+    llm = build_llm(llm_config)
+
+    scenario_text = scenario_summary(scenario)
+    graph_store = get_graph_store()
+    agent = QueryAgent(llm, graph_store)
+    connection = agent.ask(question, scenario_text)
+
+    relationships = connection.get("relationships", [])
+    trace = build_relationship_trace(relationships)
+    trace_summary = f"Found {len(relationships)} graph relationships."
+
+    if not relationships:
+        schema_summary = graph_store.get_schema_summary()
+        retrieved = retrieve_notes(question, llm, STATE.vector_store)
+        answer = graphrag_fallback_answer(
+            llm,
+            question,
+            scenario_text,
+            schema_summary,
+            retrieved,
+        )
+        connection["answer"] = answer
+        trace_summary = "No explicit relationships found; answered with schema + retrieved notes."
+
+    return {
+        "answer": connection.get("answer"),
+        "trace": trace,
+        "trace_summary": trace_summary,
+        "scenario": scenario_text,
+        "cypher": connection.get("cypher"),
+        "llm_provider": llm_config.provider,
+        "llm_model": llm_config.model,
+    }
 
 
 @app.post("/chat/both")
@@ -200,76 +276,6 @@ def validate_rows(raw_rows: List[Dict]) -> List[Dict]:
     return validated
 
 
-def build_graph_store(rows: List[Dict]) -> None:
-    graph = GraphStore()
-    for row in rows:
-        graph.nodes["product"].add(row["product_id"])
-        graph.nodes["component"].add(row["component_id"])
-        graph.nodes["supplier"].add(row["supplier_id"])
-        graph.nodes["factory"].add(row["factory_id"])
-        graph.nodes["port"].add(row["port_id"])
-        graph.nodes["country"].add(row["supplier_country"])
-        graph.nodes["country"].add(row["factory_country"])
-        graph.nodes["country"].add(row["port_country"])
-        graph.nodes["country"].add(row["market_country"])
-        graph.edges.extend(
-            [
-                {
-                    "from": ("product", row["product_id"]),
-                    "to": ("component", row["component_id"]),
-                    "type": "USES",
-                    "row_id": row["row_id"],
-                },
-                {
-                    "from": ("component", row["component_id"]),
-                    "to": ("supplier", row["supplier_id"]),
-                    "type": "SUPPLIED_BY",
-                    "row_id": row["row_id"],
-                },
-                {
-                    "from": ("supplier", row["supplier_id"]),
-                    "to": ("country", row["supplier_country"]),
-                    "type": "LOCATED_IN",
-                    "row_id": row["row_id"],
-                },
-                {
-                    "from": ("factory", row["factory_id"]),
-                    "to": ("product", row["product_id"]),
-                    "type": "PRODUCES",
-                    "row_id": row["row_id"],
-                },
-                {
-                    "from": ("supplier", row["supplier_id"]),
-                    "to": ("factory", row["factory_id"]),
-                    "type": "SHIPS_TO",
-                    "row_id": row["row_id"],
-                    "cost_usd": row["ship_cost_usd"],
-                    "time_days": row["ship_time_days"],
-                    "co2_kg": row["ship_co2_kg"],
-                },
-                {
-                    "from": ("factory", row["factory_id"]),
-                    "to": ("port", row["port_id"]),
-                    "type": "EXPORTS_VIA",
-                    "row_id": row["row_id"],
-                    "cost_usd": row["export_cost_usd"],
-                    "time_days": row["export_time_days"],
-                    "co2_kg": row["export_co2_kg"],
-                },
-                {
-                    "from": ("port", row["port_id"]),
-                    "to": ("country", row["market_country"]),
-                    "type": "IMPORTS_TO",
-                    "row_id": row["row_id"],
-                    "cost_usd": row["import_cost_usd"],
-                    "time_days": row["import_time_days"],
-                    "co2_kg": row["import_co2_kg"],
-                },
-            ]
-        )
-    STATE.graph = graph
-
-
 def build_notes(rows: List[Dict]) -> None:
     os.makedirs(NOTES_DIR, exist_ok=True)
     notes = {}
@@ -291,61 +297,20 @@ def build_notes(rows: List[Dict]) -> None:
     STATE.notes = notes
 
 
-def tokenize(text: str) -> List[str]:
-    return re.findall(r"[a-z0-9]+", text.lower())
+def build_vector_store(llm: LLMHandler) -> SimpleVectorStore:
+    store = SimpleVectorStore()
+    for note_id, text in STATE.notes.items():
+        embedding = llm.embed(text)
+        store.add(str(note_id), text, embedding)
+    return store
 
 
-def build_vector_index() -> None:
-    docs = list(STATE.notes.items())
-    vocabulary: Dict[str, int] = {}
-    doc_tokens = []
-    for _, text in docs:
-        tokens = tokenize(text)
-        doc_tokens.append(tokens)
-        for token in set(tokens):
-            if token not in vocabulary:
-                vocabulary[token] = len(vocabulary)
-    doc_count = len(docs)
-    idf = [0.0] * len(vocabulary)
-    for token, idx in vocabulary.items():
-        doc_freq = sum(1 for tokens in doc_tokens if token in tokens)
-        idf[idx] = math.log((1 + doc_count) / (1 + doc_freq)) + 1
-    vectors = []
-    for tokens in doc_tokens:
-        vec = [0.0] * len(vocabulary)
-        for token in tokens:
-            vec[vocabulary[token]] += 1
-        norm = math.sqrt(sum((vec[i] * idf[i]) ** 2 for i in range(len(vec)))) or 1.0
-        weighted = [(vec[i] * idf[i]) / norm for i in range(len(vec))]
-        vectors.append(weighted)
-    STATE.vector_index = VectorIndex(
-        vocabulary=vocabulary,
-        idf=idf,
-        vectors=vectors,
-        note_ids=[doc_id for doc_id, _ in docs],
-    )
-
-
-def retrieve_notes(question: str, top_k: int = 5) -> List[Tuple[int, str]]:
-    index = STATE.vector_index
-    if not index.vectors:
+def retrieve_notes(question: str, llm: LLMHandler, store: SimpleVectorStore, top_k: int = 5) -> List[Tuple[int, str]]:
+    if not question or not store.docs:
         return []
-    query_tokens = tokenize(question)
-    vec = [0.0] * len(index.vocabulary)
-    for token in query_tokens:
-        if token in index.vocabulary:
-            vec[index.vocabulary[token]] += 1
-    norm = math.sqrt(sum((vec[i] * index.idf[i]) ** 2 for i in range(len(vec)))) or 1.0
-    query_vec = [(vec[i] * index.idf[i]) / norm for i in range(len(vec))]
-    scored = []
-    for idx, doc_vec in enumerate(index.vectors):
-        score = sum(query_vec[i] * doc_vec[i] for i in range(len(query_vec)))
-        scored.append((score, index.note_ids[idx]))
-    scored.sort(reverse=True)
-    results = []
-    for _, note_id in scored[:top_k]:
-        results.append((note_id, STATE.notes[note_id]))
-    return results
+    query_embedding = llm.embed(question)
+    matches = store.query(query_embedding, n=top_k)
+    return [(int(match["id"]), match["text"]) for match in matches]
 
 
 def scenario_summary(scenario: Dict) -> str:
@@ -363,107 +328,123 @@ def scenario_summary(scenario: Dict) -> str:
     return " ".join(parts)
 
 
-def rag_answer(question: str, scenario_text: str, retrieved: List[Tuple[int, str]]) -> str:
+def rag_answer(
+    llm: LLMHandler,
+    question: str,
+    scenario_text: str,
+    retrieved: List[Tuple[int, str]],
+) -> str:
     notes_text = "\n\n".join([note for _, note in retrieved])
-    return (
-        "Neural Recall (RAG) response based on retrieved notes.\n"
-        f"Scenario: {scenario_text}\n"
-        f"Question: {question}\n\n"
-        "Retrieved evidence (top 5):\n"
-        f"{notes_text}\n\n"
-        "This response paraphrases retrieved rows and does not perform structured reasoning."
+    prompt = (
+        "You are a supply chain analyst. Use ONLY the provided context to answer. "
+        "If the context does not contain the answer, say you do not have enough evidence.\n\n"
+        f"Scenario: {scenario_text}\n\n"
+        f"Context:\n{notes_text}\n\n"
+        f"Question: {question}\n"
+        "Answer:"
+    )
+    return llm.call(prompt)
+
+
+def graphrag_fallback_answer(
+    llm: LLMHandler,
+    question: str,
+    scenario_text: str,
+    schema_summary: Dict,
+    retrieved: List[Tuple[int, str]],
+) -> str:
+    notes_text = "\n\n".join([note for _, note in retrieved])
+    prompt = (
+        "You are a supply chain graph assistant. Use the schema summary and retrieved notes "
+        "to answer the question. If the answer is not present, explain the limitation.\n\n"
+        f"Scenario: {scenario_text}\n\n"
+        f"Graph Schema: {schema_summary}\n\n"
+        f"Retrieved Notes:\n{notes_text}\n\n"
+        f"Question: {question}\n"
+        "Answer:"
+    )
+    return llm.call(prompt)
+
+
+def build_relationship_trace(relationships: List[Dict]) -> List[Dict]:
+    trace = []
+    for rel in relationships:
+        rel_type = rel.get("rel_type", "REL")
+        confidence = rel.get("confidence")
+        source_span = rel.get("source_span")
+        summary_parts = [rel_type]
+        if confidence is not None:
+            summary_parts.append(f"confidence {confidence:.2f}")
+        if source_span:
+            summary_parts.append(f"span: {source_span}")
+        trace.append(
+            {
+                "rel_type": rel_type,
+                "confidence": confidence,
+                "source_span": source_span,
+                "summary": " | ".join(summary_parts),
+            }
+        )
+    return trace
+
+
+def resolve_llm_config(
+    provider: str | None,
+    model: str | None,
+    embed_model: str | None,
+) -> LLMConfig:
+    resolved_provider = (provider or os.getenv("LLM_PROVIDER") or "openai").strip().lower()
+    resolved_model = (model or os.getenv("LLM_MODEL") or default_model(resolved_provider)).strip()
+    resolved_embed = (
+        embed_model
+        or os.getenv("LLM_EMBED_MODEL")
+        or default_embed_model(resolved_provider)
+    ).strip()
+    return LLMConfig(
+        provider=resolved_provider,
+        model=resolved_model,
+        embed_model=resolved_embed,
     )
 
 
-def is_supplier_b(row: Dict) -> bool:
-    supplier_id = row["supplier_id"].strip().lower()
-    supplier_name = row["supplier_name"].strip().lower()
-    return supplier_id in {"b", "supplier_b", "supplier b"} or "supplier b" in supplier_name
-
-
-def calculate_path_metrics(row: Dict, scenario: Dict) -> Dict:
-    base_cost = row["ship_cost_usd"] + row["export_cost_usd"] + row["import_cost_usd"]
-    total_time = row["ship_time_days"] + row["export_time_days"] + row["import_time_days"]
-    total_co2 = row["ship_co2_kg"] + row["export_co2_kg"] + row["import_co2_kg"]
-    carbon_cost = 0.0
-    if scenario.get("carbonTaxEnabled"):
-        rate = float(scenario.get("carbonTaxRate", 0.1))
-        carbon_cost = total_co2 * rate
-    total_cost = base_cost + carbon_cost
+def default_model(provider: str) -> str:
     return {
-        "base_cost": base_cost,
-        "total_time": total_time,
-        "total_co2": total_co2,
-        "carbon_cost": carbon_cost,
-        "total_cost": total_cost,
-    }
+        "openai": "gpt-4o-mini",
+        "ollama": "llama3.1",
+    }.get(provider, "gpt-4o-mini")
 
 
-def graphrag_answer(question: str, scenario: Dict) -> Dict:
-    max_days = scenario.get("maxLeadTimeDays")
-    filtered_rows = []
-    exclusions = []
-    for row in STATE.rows:
-        if scenario.get("supplierBOutage") and is_supplier_b(row):
-            exclusions.append((row, "Supplier B outage"))
-            continue
-        metrics = calculate_path_metrics(row, scenario)
-        if max_days and metrics["total_time"] > max_days:
-            exclusions.append((row, f"Lead time {metrics['total_time']} > {max_days}"))
-            continue
-        filtered_rows.append((row, metrics))
+def default_embed_model(provider: str) -> str:
+    return {
+        "openai": "text-embedding-3-small",
+        "ollama": "nomic-embed-text",
+    }.get(provider, "text-embedding-3-small")
 
-    response = {
-        "answer": "",
-        "trace": [],
-        "scenario": scenario_summary(scenario),
-    }
 
-    question_lower = question.lower()
-    if "which product" in question_lower and "pause" in question_lower:
-        products = {row["product_id"]: row["product_name"] for row in STATE.rows}
-        viable = {row["product_id"] for row, _ in filtered_rows}
-        paused = [name for pid, name in products.items() if pid not in viable]
-        if paused:
-            response["answer"] = (
-                "Pause these products because no feasible paths remain under the scenario constraints: "
-                + ", ".join(paused)
-                + "."
-            )
-        else:
-            response["answer"] = "No products need to be paused; each has at least one feasible path."
-    else:
-        best_by_product: Dict[str, Tuple[Dict, Dict]] = {}
-        for row, metrics in filtered_rows:
-            current = best_by_product.get(row["product_id"])
-            if current is None or metrics["total_cost"] < current[1]["total_cost"]:
-                best_by_product[row["product_id"]] = (row, metrics)
-        if not best_by_product:
-            response["answer"] = "No feasible paths remain under the scenario constraints."
-        else:
-            lines = []
-            for _, (row, metrics) in best_by_product.items():
-                lines.append(
-                    f"{row['product_name']}: best path via {row['supplier_name']} -> {row['factory_name']} "
-                    f"-> {row['port_name']} totals ${metrics['total_cost']:.2f} and {metrics['total_time']} days."
-                )
-            response["answer"] = "\n".join(lines)
+def build_llm(config: LLMConfig) -> LLMHandler:
+    try:
+        return LLMHandler(
+            provider=config.provider,
+            model=config.model,
+            embed_model=config.embed_model,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"LLM init failed: {exc}") from exc
 
-    response["trace"] = [
-        {
-            "row_id": row["row_id"],
-            "product": row["product_name"],
-            "component": row["component_name"],
-            "supplier": row["supplier_name"],
-            "factory": row["factory_name"],
-            "port": row["port_name"],
-            "market": row["market_country"],
-            "reason": reason,
-        }
-        for row, reason in exclusions
-    ]
-    response["trace_summary"] = (
-        f"Excluded {len(exclusions)} paths. Remaining paths: {len(filtered_rows)}."
-    )
-    return response
 
+def get_graph_store() -> GraphStore:
+    if STATE.graph_store:
+        return STATE.graph_store
+    uri = os.getenv("NEO4J_URI")
+    user = os.getenv("NEO4J_USER")
+    password = os.getenv("NEO4J_PASSWORD")
+    if not uri or not user or not password:
+        raise HTTPException(status_code=500, detail="Missing Neo4j credentials in environment")
+    try:
+        store = GraphStore(uri, user, password)
+        with store.driver.session() as session:
+            session.run("RETURN 1")
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Neo4j connection failed: {exc}") from exc
+    STATE.graph_store = store
+    return store
