@@ -16,7 +16,7 @@ from app.modules.llm_handler import LLMHandler
 from app.modules.query_agent import QueryAgent
 from app.modules.vector_store import SimpleVectorStore
 
-from app.modules.file_utils import log_json
+from app.modules.file_utils import log_json, log_text
 
 
 load_dotenv()
@@ -78,7 +78,6 @@ class WorldState:
     last_scenario: Dict = field(default_factory=dict)
     llm_config: LLMConfig | None = None
     graph_store: GraphStore | None = None
-
     def reset(self) -> None:
         self.rows = []
         self.notes = {}
@@ -208,8 +207,17 @@ def chat_rag(payload: Dict) -> Dict:
 
     ensure_vector_store(llm)
     retrieved = retrieve_notes(question, llm, STATE.vector_store)
+    print("RAG RETRIEVED NOTES:\n", retrieved)
+    log_json("rag_retrieved.json", {"retrieved": retrieved})
     scenario_text = scenario_summary(scenario)
-    answer = rag_answer(llm, question, scenario_text, retrieved)
+    print("RAG SCENARIO TEXT:\n", scenario_text)
+    log_json("rag_scenario.json", {"scenario_text": scenario_text})
+    table_context = ""
+    if STATE.rows and len(STATE.rows) <= 200:
+        table_context = rows_to_csv(STATE.rows, max_rows=200)
+    answer = rag_answer(llm, question, scenario_text, retrieved, table_context or None)
+    print("RAG ANSWER:\n", answer)
+    log_json("rag_answer.json", {"answer": answer})
     retval = {
         "answer": answer,
         "notes": retrieved,
@@ -393,6 +401,23 @@ def build_notes(rows: List[Dict]) -> None:
     STATE.notes = notes
 
 
+def rows_to_csv(rows: List[Dict], max_rows: int = 200) -> str:
+    if not rows:
+        return ""
+    headers = [col for col in REQUIRED_COLUMNS if col in rows[0]]
+    def render_cell(value: object) -> str:
+        text = "" if value is None else str(value)
+        if any(ch in text for ch in [",", "\"", "\n"]):
+            text = text.replace("\"", "\"\"")
+            return f"\"{text}\""
+        return text
+    lines = [",".join(headers)]
+    for row in rows[:max_rows]:
+        line = ",".join(render_cell(row.get(col)) for col in headers)
+        lines.append(line)
+    return "\n".join(lines)
+
+
 def build_vector_store(llm: LLMHandler) -> SimpleVectorStore:
     store = SimpleVectorStore()
     for note_id, text in STATE.notes.items():
@@ -438,18 +463,21 @@ def rag_answer(
     question: str,
     scenario_text: str,
     retrieved: List[Dict],
+    table_context: str | None = None,
 ) -> str:
     notes_text = "\n\n".join([note["text"] for note in retrieved])
+    table_block = f"Table (full data):\n{table_context}\n\n" if table_context else ""
     prompt = (
         "You are a supply chain analyst. Use ONLY the provided context to answer. "
         "If the context does not contain the answer, say you do not have enough evidence.\n\n"
         f"Scenario: {scenario_text}\n\n"
         f"Context:\n{notes_text}\n\n"
+        f"{table_block}"
         f"Question: {question}\n"
         "Answer:"
     )
     #print("RAG PROMPT:\n", prompt)
-    log_json("rag_prompt.json", {"prompt": prompt})
+    log_text("rag_prompt.txt", prompt)
     return llm.call(prompt, temperature=0.2)
 
 
