@@ -17,7 +17,7 @@ This demo compares Neural Recall (RAG) with a Symbolic World Model (GraphRAG). B
 uvicorn app.main:app --reload
 ```
 
-Open `http://localhost:8000` and upload `supply_chain.csv` or an `.xlsx` equivalent.
+Open `http://localhost:8000` and upload `supplychain.csv` or an `.xlsx` equivalent.
 
 ## API
 

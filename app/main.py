@@ -3,7 +3,7 @@ import io
 import json
 import os
 from dataclasses import dataclass, field
-from typing import Dict, List, Tuple
+from typing import Callable, Dict, List, Tuple
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
@@ -22,42 +22,256 @@ from app.modules.file_utils import log_json, log_text
 
 load_dotenv()
 
-REQUIRED_COLUMNS = [
-    "product_id",
-    "product_name",
-    "component_id",
-    "component_name",
-    "supplier_id",
-    "supplier_name",
-    "supplier_country",
-    "factory_id",
-    "factory_name",
-    "factory_country",
-    "port_id",
-    "port_name",
-    "port_country",
-    "market_country",
-    "ship_cost_usd",
-    "ship_time_days",
-    "ship_co2_kg",
-    "export_cost_usd",
-    "export_time_days",
-    "export_co2_kg",
-    "import_cost_usd",
-    "import_time_days",
-    "import_co2_kg",
-]
 
-NUMERIC_COLUMNS = {
-    "ship_cost_usd": float,
-    "ship_time_days": int,
-    "ship_co2_kg": float,
-    "export_cost_usd": float,
-    "export_time_days": int,
-    "export_co2_kg": float,
-    "import_cost_usd": float,
-    "import_time_days": int,
-    "import_co2_kg": float,
+@dataclass(frozen=True)
+class DomainConfig:
+    key: str
+    label: str
+    required_columns: List[str]
+    numeric_columns: Dict[str, Callable[[object], object]]
+    rag_role: str
+    ontology_text: str
+    canonical_patterns: str
+    forbidden_patterns: str
+    domain_guidance: str
+    question_placeholder: str
+    faq: List[Dict[str, str]]
+
+
+SUPPLY_CHAIN_CONFIG = DomainConfig(
+    key="supplychain",
+    label="Supply Chain Assistant",
+    required_columns=[
+        "product_id",
+        "product_name",
+        "component_id",
+        "component_name",
+        "supplier_id",
+        "supplier_name",
+        "supplier_country",
+        "factory_id",
+        "factory_name",
+        "factory_country",
+        "port_id",
+        "port_name",
+        "port_country",
+        "market_country",
+        "ship_cost_usd",
+        "ship_time_days",
+        "ship_co2_kg",
+        "export_cost_usd",
+        "export_time_days",
+        "export_co2_kg",
+        "import_cost_usd",
+        "import_time_days",
+        "import_co2_kg",
+    ],
+    numeric_columns={
+        "ship_cost_usd": float,
+        "ship_time_days": int,
+        "ship_co2_kg": float,
+        "export_cost_usd": float,
+        "export_time_days": int,
+        "export_co2_kg": float,
+        "import_cost_usd": float,
+        "import_time_days": int,
+        "import_co2_kg": float,
+    },
+    rag_role="supply chain analyst",
+    ontology_text=GraphStore.get_supply_chain_ontology_text(),
+    canonical_patterns=(
+        "- USES:        (p:Product)-[:USES]->(comp:Component)\n"
+        "- SUPPLIES:    (s:Supplier)-[:SUPPLIES]->(comp:Component)\n"
+        "- PRODUCES:    (f:Factory)-[:PRODUCES]->(p:Product)\n"
+        "- LOCATED_IN:  (x)-[:LOCATED_IN]->(c:Country)\n"
+        "- SHIPS_TO:    (s:Supplier)-[:SHIPS_TO]->(f:Factory)\n"
+        "- EXPORTS_VIA: (f:Factory)-[:EXPORTS_VIA]->(port:Port)\n"
+        "- IMPORTS_TO:  (port:Port)-[:IMPORTS_TO]->(c:Country)\n"
+    ),
+    forbidden_patterns=(
+        "- (:Component)-[:SUPPLIES]->(:Supplier)\n"
+        "- (:Product)-[:PRODUCES]->(:Factory)\n"
+        "- (:Country)-[:LOCATED_IN]->(:Supplier)\n"
+    ),
+    domain_guidance="Supply chain questions focus on dependencies, costs, time, emissions, and disruption risk.",
+    question_placeholder="Ask a question about the supply chain...",
+    faq=[
+        {
+            "label": "Supplier B outage impact",
+            "question": "What happens if Supplier B is offline for two weeks?",
+        },
+        {
+            "label": "Carbon tax sensitivity",
+            "question": "How would a $0.10/kg CO₂ carbon tax change total cost by product?",
+        },
+        {
+            "label": "Lead time cap risk",
+            "question": "Which products break first if max lead time is capped at 10 days?",
+        },
+        {
+            "label": "Vietnam disruption",
+            "question": "Why does a disruption in Vietnam affect Product Gamma but not Product Delta?",
+        },
+    ],
+)
+
+FRAUD_CONFIG = DomainConfig(
+    key="fraudfinder",
+    label="Fraud Finder",
+    required_columns=[
+        "account_id",
+        "account_name",
+        "account_status",
+        "account_risk_score",
+        "transaction_id",
+        "transaction_amount",
+        "transaction_timestamp",
+        "transaction_channel",
+        "merchant_id",
+        "merchant_name",
+        "merchant_category",
+        "device_id",
+        "device_type",
+        "device_fingerprint",
+        "email",
+        "phone",
+        "ip_address",
+        "billing_address",
+        "billing_country",
+    ],
+    numeric_columns={
+        "transaction_amount": float,
+        "account_risk_score": float,
+    },
+    rag_role="fraud analyst",
+    ontology_text=(
+        "Nodes:\n"
+        "- Account {id, name, status, risk_score}\n"
+        "- Transaction {id, amount, timestamp, channel}\n"
+        "- Merchant {id, name, category}\n"
+        "- Device {id, type, fingerprint}\n"
+        "- Email {id, address}\n"
+        "- Phone {id, number}\n"
+        "- IP {id, address}\n"
+        "- Address {id, country}\n\n"
+        "Relationships:\n"
+        "- (Account)-[:INITIATED]->(Transaction)\n"
+        "- (Transaction)-[:TO]->(Merchant)\n"
+        "- (Account)-[:USES_DEVICE]->(Device)\n"
+        "- (Account)-[:USES_EMAIL]->(Email)\n"
+        "- (Account)-[:USES_PHONE]->(Phone)\n"
+        "- (Account)-[:LOGGED_IN_FROM]->(IP)\n"
+        "- (Account)-[:HAS_ADDRESS]->(Address)\n\n"
+        "IDs:\n"
+        "- account_id, transaction_id, merchant_id, device_id are node ids.\n"
+    ),
+    canonical_patterns=(
+        "- INITIATED:   (a:Account)-[:INITIATED]->(t:Transaction)\n"
+        "- TO:          (t:Transaction)-[:TO]->(m:Merchant)\n"
+        "- USES_DEVICE: (a:Account)-[:USES_DEVICE]->(d:Device)\n"
+        "- USES_EMAIL:  (a:Account)-[:USES_EMAIL]->(e:Email)\n"
+        "- USES_PHONE:  (a:Account)-[:USES_PHONE]->(p:Phone)\n"
+        "- LOGGED_IN:   (a:Account)-[:LOGGED_IN_FROM]->(ip:IP)\n"
+        "- HAS_ADDRESS: (a:Account)-[:HAS_ADDRESS]->(addr:Address)\n"
+    ),
+    forbidden_patterns="",
+    domain_guidance="Fraud questions focus on shared entities, suspicious connectivity, and anomalous transaction patterns.",
+    question_placeholder="Ask a question about fraud risk...",
+    faq=[
+        {
+            "label": "Shared device risk",
+            "question": "Which accounts share a device with Account A17?",
+        },
+        {
+            "label": "Ring detection",
+            "question": "Show accounts connected through the same merchant and device.",
+        },
+        {
+            "label": "IP clustering",
+            "question": "Which accounts log in from the same IP as flagged accounts?",
+        },
+        {
+            "label": "Account explanation",
+            "question": "Why was Account A17 flagged as high risk?",
+        },
+    ],
+)
+
+MEDICAL_CONFIG = DomainConfig(
+    key="drhouse",
+    label="Dr House",
+    required_columns=[
+        "patient_id",
+        "patient_name",
+        "visit_id",
+        "visit_date",
+        "provider_id",
+        "provider_name",
+        "symptom",
+        "diagnosis",
+        "medication",
+        "lab_name",
+        "lab_value",
+        "lab_unit",
+    ],
+    numeric_columns={
+        "lab_value": float,
+    },
+    rag_role="clinical decision-support assistant",
+    ontology_text=(
+        "Nodes:\n"
+        "- Patient {id, name}\n"
+        "- Visit {id, date}\n"
+        "- Provider {id, name}\n"
+        "- Symptom {id, name}\n"
+        "- Diagnosis {id, name}\n"
+        "- Medication {id, name}\n"
+        "- LabTest {id, name, value, unit}\n\n"
+        "Relationships:\n"
+        "- (Patient)-[:HAD_VISIT]->(Visit)\n"
+        "- (Provider)-[:ATTENDED]->(Visit)\n"
+        "- (Visit)-[:HAS_SYMPTOM]->(Symptom)\n"
+        "- (Visit)-[:RESULTED_IN]->(Diagnosis)\n"
+        "- (Visit)-[:PRESCRIBED]->(Medication)\n"
+        "- (Visit)-[:HAD_LAB]->(LabTest)\n\n"
+        "IDs:\n"
+        "- patient_id, visit_id, provider_id are node ids.\n"
+    ),
+    canonical_patterns=(
+        "- HAD_VISIT:   (p:Patient)-[:HAD_VISIT]->(v:Visit)\n"
+        "- ATTENDED:    (prov:Provider)-[:ATTENDED]->(v:Visit)\n"
+        "- HAS_SYMPTOM: (v:Visit)-[:HAS_SYMPTOM]->(s:Symptom)\n"
+        "- RESULTED_IN: (v:Visit)-[:RESULTED_IN]->(d:Diagnosis)\n"
+        "- PRESCRIBED:  (v:Visit)-[:PRESCRIBED]->(m:Medication)\n"
+        "- HAD_LAB:     (v:Visit)-[:HAD_LAB]->(l:LabTest)\n"
+    ),
+    forbidden_patterns="",
+    domain_guidance="Medical questions should summarize evidence from visits, symptoms, labs, and diagnoses without claiming certainty.",
+    question_placeholder="Ask a question about patient patterns...",
+    faq=[
+        {
+            "label": "Symptom clusters",
+            "question": "Which symptoms co-occur most often for Patient P12?",
+        },
+        {
+            "label": "Diagnosis rationale",
+            "question": "What evidence supports the diagnosis for Patient P12?",
+        },
+        {
+            "label": "Medication patterns",
+            "question": "Which medications are most common for this diagnosis?",
+        },
+        {
+            "label": "Lab anomalies",
+            "question": "Show abnormal lab patterns for Patient P12.",
+        },
+    ],
+)
+
+DOMAINS: Dict[str, DomainConfig] = {
+    SUPPLY_CHAIN_CONFIG.key: SUPPLY_CHAIN_CONFIG,
+    FRAUD_CONFIG.key: FRAUD_CONFIG,
+    MEDICAL_CONFIG.key: MEDICAL_CONFIG,
 }
 
 NOTES_DIR = "notes"
@@ -85,8 +299,7 @@ class WorldState:
         self.vector_store = SimpleVectorStore()
         self.last_scenario = {}
 
-
-STATE = WorldState()
+DOMAIN_STATES: Dict[str, WorldState] = {}
 
 app = FastAPI()
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -102,32 +315,52 @@ def dev_persist_enabled() -> bool:
     return is_truthy(os.getenv(DEV_PERSIST_DB_ENV))
 
 
-def load_notes_from_disk() -> None:
-    if STATE.notes:
+def normalize_domain(domain: str | None) -> str:
+    if not domain:
+        return SUPPLY_CHAIN_CONFIG.key
+    key = domain.strip().lower().replace(" ", "_")
+    return key if key in DOMAINS else SUPPLY_CHAIN_CONFIG.key
+
+
+def get_domain_config(domain: str | None) -> DomainConfig:
+    return DOMAINS[normalize_domain(domain)]
+
+
+def get_state(domain: str | None) -> WorldState:
+    key = normalize_domain(domain)
+    if key not in DOMAIN_STATES:
+        DOMAIN_STATES[key] = WorldState()
+    return DOMAIN_STATES[key]
+
+
+def load_notes_from_disk(domain: str | None, state: WorldState) -> None:
+    if state.notes:
         return
-    if not os.path.isdir(NOTES_DIR):
+    domain_key = normalize_domain(domain)
+    notes_dir = os.path.join(NOTES_DIR, domain_key)
+    if not os.path.isdir(notes_dir):
         return
     notes: Dict[int, str] = {}
-    for filename in sorted(os.listdir(NOTES_DIR)):
+    for filename in sorted(os.listdir(notes_dir)):
         if not filename.startswith("note_row_") or not filename.endswith(".txt"):
             continue
         try:
             note_id = int(filename.replace("note_row_", "").replace(".txt", ""))
         except ValueError:
             continue
-        path = os.path.join(NOTES_DIR, filename)
+        path = os.path.join(notes_dir, filename)
         with open(path, "r", encoding="utf-8") as handle:
             notes[note_id] = handle.read()
-    STATE.notes = notes
+    state.notes = notes
 
 
-def ensure_vector_store(llm: LLMHandler) -> None:
-    if STATE.vector_store.docs:
+def ensure_vector_store(llm: LLMHandler, domain: str | None, state: WorldState) -> None:
+    if state.vector_store.docs:
         return
-    if not STATE.notes:
-        load_notes_from_disk()
-    if STATE.notes:
-        STATE.vector_store = build_vector_store(llm)
+    if not state.notes:
+        load_notes_from_disk(domain, state)
+    if state.notes:
+        state.vector_store = build_vector_store(llm, state)
 
 
 @app.get("/")
@@ -141,42 +374,45 @@ def upload_data(
     provider: str | None = Form(default=None),
     model: str | None = Form(default=None),
     embed_model: str | None = Form(default=None),
+    domain: str | None = Form(default=None),
 ) -> Dict:
-    STATE.reset()
+    domain_config = get_domain_config(domain)
+    state = get_state(domain_config.key)
+    state.reset()
     filename = file.filename or ""
     content = file.file.read()
     try:
         if filename.lower().endswith(".csv"):
-            rows = parse_csv(content)
+            rows = parse_csv(content, domain_config)
         elif filename.lower().endswith(".xlsx"):
-            rows = parse_xlsx(content)
+            rows = parse_xlsx(content, domain_config)
         else:
             raise HTTPException(status_code=400, detail="Unsupported file type")
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    STATE.rows = rows
-    build_notes(rows)
+    state.rows = rows
+    build_notes(rows, domain_config, state)
 
     llm_config = resolve_llm_config(provider, model, embed_model)
-    STATE.llm_config = llm_config
+    state.llm_config = llm_config
 
     llm = build_llm(llm_config)
     try:
-        STATE.vector_store = build_vector_store(llm)
+        state.vector_store = build_vector_store(llm, state)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Embedding ingestion failed: {exc}") from exc
 
     try:
-        graph_store = get_graph_store()
+        graph_store = get_graph_store(domain_config.key)
         graph_store.clear_graph()
-        graph_store.insert_supply_chain(rows)
+        graph_store.insert_rows(domain_config.key, rows)
     except HTTPException:
         raise
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Neo4j ingestion failed: {exc}") from exc
 
-    STATE.last_scenario = {}
+    state.last_scenario = {}
 
     return {
         "status": "ok",
@@ -185,6 +421,7 @@ def upload_data(
         "llm_provider": llm_config.provider,
         "llm_model": llm_config.model,
         "embed_model": llm_config.embed_model,
+        "domain": domain_config.key,
     }
 
 
@@ -192,6 +429,8 @@ def upload_data(
 def chat_rag(payload: Dict) -> Dict:
     print("RAG PAYLOAD:\n", payload)
     question = (payload.get("question") or "").strip()
+    domain_config = get_domain_config(payload.get("domain"))
+    state = get_state(domain_config.key)
     scenario = payload.get("scenario") or {}
     if not question:
         raise HTTPException(status_code=400, detail="Question is required")
@@ -203,20 +442,27 @@ def chat_rag(payload: Dict) -> Dict:
     )
     llm = build_llm(llm_config)
 
-    if not STATE.rows and not dev_persist_enabled():
+    if not state.rows and not dev_persist_enabled():
         raise HTTPException(status_code=400, detail="No data uploaded")
 
-    ensure_vector_store(llm)
-    retrieved = retrieve_notes(question, llm, STATE.vector_store)
+    ensure_vector_store(llm, domain_config.key, state)
+    retrieved = retrieve_notes(question, llm, state.vector_store)
     print("RAG RETRIEVED NOTES:\n", retrieved)
     log_json("rag_retrieved.json", {"retrieved": retrieved})
-    scenario_text = scenario_summary(scenario)
+    scenario_text = scenario_summary(domain_config.key, scenario)
     print("RAG SCENARIO TEXT:\n", scenario_text)
     log_json("rag_scenario.json", {"scenario_text": scenario_text})
     table_context = ""
-    if STATE.rows and len(STATE.rows) <= 200:
-        table_context = rows_to_csv(STATE.rows, max_rows=200)
-    answer = rag_answer(llm, question, scenario_text, retrieved, table_context or None)
+    if state.rows and len(state.rows) <= 200:
+        table_context = rows_to_csv(state.rows, domain_config, max_rows=200)
+    answer = rag_answer(
+        llm,
+        question,
+        scenario_text,
+        retrieved,
+        domain_config,
+        table_context or None,
+    )
     print("RAG ANSWER:\n", answer)
     log_json("rag_answer.json", {"answer": answer})
     retval = {
@@ -229,6 +475,7 @@ def chat_rag(payload: Dict) -> Dict:
         "scenario": scenario_text,
         "llm_provider": llm_config.provider,
         "llm_model": llm_config.model,
+        "domain": domain_config.key,
     }
     log_json("rag_response.json", retval)
     return retval
@@ -238,6 +485,8 @@ def chat_rag(payload: Dict) -> Dict:
 def chat_graphrag(payload: Dict) -> Dict:
     print("GRAPHRAG PAYLOAD:\n", payload)
     question = (payload.get("question") or "").strip()
+    domain_config = get_domain_config(payload.get("domain"))
+    state = get_state(domain_config.key)
     scenario = payload.get("scenario") or {}
     if not question:
         raise HTTPException(status_code=400, detail="Question is required")
@@ -249,13 +498,13 @@ def chat_graphrag(payload: Dict) -> Dict:
     )
     llm = build_llm(llm_config)
 
-    scenario_text = scenario_summary(scenario)
-    graph_store = get_graph_store()
-    agent = QueryAgent(llm, graph_store)
+    scenario_text = scenario_summary(domain_config.key, scenario)
+    graph_store = get_graph_store(domain_config.key)
+    agent = QueryAgent(llm, graph_store, domain_config)
 
-    if not STATE.rows and not dev_persist_enabled():
+    if not state.rows and not dev_persist_enabled():
         raise HTTPException(status_code=400, detail="No data uploaded")
-    if not STATE.rows and dev_persist_enabled() and not graph_store.has_data():
+    if not state.rows and dev_persist_enabled() and not graph_store.has_data():
         raise HTTPException(status_code=400, detail="No graph data available")
 
     connection = agent.ask_cypher(question, scenario_text)
@@ -279,6 +528,7 @@ def chat_graphrag(payload: Dict) -> Dict:
         "verification": verification,
         "llm_provider": llm_config.provider,
         "llm_model": llm_config.model,
+        "domain": domain_config.key,
     }
     print("GRAPHRAG RESPONSE:\n", retval)
     log_json("graphrag_response.json", retval)
@@ -288,6 +538,8 @@ def chat_graphrag(payload: Dict) -> Dict:
 @app.post("/chat/rag/stream")
 def chat_rag_stream(payload: Dict):
     question = (payload.get("question") or "").strip()
+    domain_config = get_domain_config(payload.get("domain"))
+    state = get_state(domain_config.key)
     scenario = payload.get("scenario") or {}
     if not question:
         raise HTTPException(status_code=400, detail="Question is required")
@@ -299,17 +551,23 @@ def chat_rag_stream(payload: Dict):
     )
     llm = build_llm(llm_config)
 
-    if not STATE.rows and not dev_persist_enabled():
+    if not state.rows and not dev_persist_enabled():
         raise HTTPException(status_code=400, detail="No data uploaded")
 
-    ensure_vector_store(llm)
-    retrieved = retrieve_notes(question, llm, STATE.vector_store)
-    scenario_text = scenario_summary(scenario)
+    ensure_vector_store(llm, domain_config.key, state)
+    retrieved = retrieve_notes(question, llm, state.vector_store)
+    scenario_text = scenario_summary(domain_config.key, scenario)
     table_context = ""
-    if STATE.rows and len(STATE.rows) <= 200:
-        table_context = rows_to_csv(STATE.rows, max_rows=200)
+    if state.rows and len(state.rows) <= 200:
+        table_context = rows_to_csv(state.rows, domain_config, max_rows=200)
 
-    prompt = build_rag_prompt(question, scenario_text, retrieved, table_context or None)
+    prompt = build_rag_prompt(
+        question,
+        scenario_text,
+        retrieved,
+        domain_config,
+        table_context or None,
+    )
 
     def event_stream():
         yield f"data: {json.dumps({'type': 'status', 'message': 'Retrieving context...'})}\n\n"
@@ -330,6 +588,8 @@ def chat_rag_stream(payload: Dict):
 @app.post("/chat/graphrag/stream")
 def chat_graphrag_stream(payload: Dict):
     question = (payload.get("question") or "").strip()
+    domain_config = get_domain_config(payload.get("domain"))
+    state = get_state(domain_config.key)
     scenario = payload.get("scenario") or {}
     if not question:
         raise HTTPException(status_code=400, detail="Question is required")
@@ -341,13 +601,13 @@ def chat_graphrag_stream(payload: Dict):
     )
     llm = build_llm(llm_config)
 
-    if not STATE.rows and not dev_persist_enabled():
+    if not state.rows and not dev_persist_enabled():
         raise HTTPException(status_code=400, detail="No data uploaded")
 
-    scenario_text = scenario_summary(scenario)
-    graph_store = get_graph_store()
-    agent = QueryAgent(llm, graph_store)
-    if not STATE.rows and dev_persist_enabled() and not graph_store.has_data():
+    scenario_text = scenario_summary(domain_config.key, scenario)
+    graph_store = get_graph_store(domain_config.key)
+    agent = QueryAgent(llm, graph_store, domain_config)
+    if not state.rows and dev_persist_enabled() and not graph_store.has_data():
         raise HTTPException(status_code=400, detail="No graph data available")
 
     def event_stream():
@@ -396,8 +656,10 @@ def chat_graphrag_stream(payload: Dict):
 
 def chat_graphrag_legacy(payload: Dict) -> Dict:
     question = (payload.get("question") or "").strip()
+    domain_config = get_domain_config(payload.get("domain"))
+    state = get_state(domain_config.key)
     scenario = payload.get("scenario") or {}
-    if not STATE.rows:
+    if not state.rows:
         raise HTTPException(status_code=400, detail="No data uploaded")
     if not question:
         raise HTTPException(status_code=400, detail="Question is required")
@@ -409,9 +671,9 @@ def chat_graphrag_legacy(payload: Dict) -> Dict:
     )
     llm = build_llm(llm_config)
 
-    scenario_text = scenario_summary(scenario)
-    graph_store = get_graph_store()
-    agent = QueryAgent(llm, graph_store)
+    scenario_text = scenario_summary(domain_config.key, scenario)
+    graph_store = get_graph_store(domain_config.key)
+    agent = QueryAgent(llm, graph_store, domain_config)
     connection = agent.ask(question, scenario_text)
 
     relationships = connection.get("relationships", [])
@@ -420,13 +682,15 @@ def chat_graphrag_legacy(payload: Dict) -> Dict:
 
     if not relationships:
         schema_summary = graph_store.get_schema_summary()
-        retrieved = retrieve_notes(question, llm, STATE.vector_store)
+        ensure_vector_store(llm, domain_config.key, state)
+        retrieved = retrieve_notes(question, llm, state.vector_store)
         answer = graphrag_fallback_answer(
             llm,
             question,
             scenario_text,
             schema_summary,
             retrieved,
+            domain_config,
         )
         connection["answer"] = answer
         connection["retrieval"] = {
@@ -445,6 +709,7 @@ def chat_graphrag_legacy(payload: Dict) -> Dict:
         "retrieval": connection.get("retrieval"),
         "llm_provider": llm_config.provider,
         "llm_model": llm_config.model,
+        "domain": domain_config.key,
     }
 
 
@@ -557,13 +822,13 @@ def run_verification_query(
     return {"query": verify_query, "result": result, "graph": graph}
 
 
-def parse_csv(content: bytes) -> List[Dict]:
+def parse_csv(content: bytes, domain_config: DomainConfig) -> List[Dict]:
     text = content.decode("utf-8")
     reader = csv.DictReader(io.StringIO(text))
-    return validate_rows(list(reader))
+    return validate_rows(list(reader), domain_config)
 
 
-def parse_xlsx(content: bytes) -> List[Dict]:
+def parse_xlsx(content: bytes, domain_config: DomainConfig) -> List[Dict]:
     workbook = load_workbook(io.BytesIO(content), data_only=True)
     sheet = workbook.active
     rows = list(sheet.iter_rows(values_only=True))
@@ -574,26 +839,26 @@ def parse_xlsx(content: bytes) -> List[Dict]:
     for row in rows[1:]:
         data = {headers[i]: row[i] for i in range(len(headers))}
         data_rows.append(data)
-    return validate_rows(data_rows)
+    return validate_rows(data_rows, domain_config)
 
 
-def validate_rows(raw_rows: List[Dict]) -> List[Dict]:
+def validate_rows(raw_rows: List[Dict], domain_config: DomainConfig) -> List[Dict]:
     if not raw_rows:
         raise ValueError("No data rows found")
     columns = list(raw_rows[0].keys())
-    missing = [col for col in REQUIRED_COLUMNS if col not in columns]
+    missing = [col for col in domain_config.required_columns if col not in columns]
     if missing:
         raise ValueError(f"Missing columns: {', '.join(missing)}")
     validated = []
     for index, row in enumerate(raw_rows, start=2):
         validated_row = {}
-        for col in REQUIRED_COLUMNS:
+        for col in domain_config.required_columns:
             value = row.get(col)
             if value is None or str(value).strip() == "":
                 raise ValueError(f"Row {index}: {col} is required")
-            if col in NUMERIC_COLUMNS:
+            if col in domain_config.numeric_columns:
                 try:
-                    cast_value = NUMERIC_COLUMNS[col](value)
+                    cast_value = domain_config.numeric_columns[col](value)
                 except (TypeError, ValueError) as exc:
                     raise ValueError(f"Row {index}: {col} must be numeric") from exc
                 validated_row[col] = cast_value
@@ -604,31 +869,62 @@ def validate_rows(raw_rows: List[Dict]) -> List[Dict]:
     return validated
 
 
-def build_notes(rows: List[Dict]) -> None:
-    os.makedirs(NOTES_DIR, exist_ok=True)
+def build_supply_chain_note(row: Dict) -> str:
+    return (
+        f"For {row['product_name']}, the component {row['component_name']} is supplied by "
+        f"{row['supplier_name']} in {row['supplier_country']}.\n"
+        f"It is shipped to {row['factory_name']} at a cost of ${row['ship_cost_usd']}, "
+        f"taking {row['ship_time_days']} days and emitting {row['ship_co2_kg']} kg CO₂.\n"
+        f"The factory exports via {row['port_name']}, costing ${row['export_cost_usd']}, "
+        f"taking {row['export_time_days']} days and emitting {row['export_co2_kg']} kg CO₂.\n"
+        f"The shipment is imported to {row['market_country']} with cost "
+        f"${row['import_cost_usd']}, time {row['import_time_days']} days and emissions "
+        f"{row['import_co2_kg']} kg CO₂."
+    )
+
+
+def build_fraud_note(row: Dict) -> str:
+    return (
+        f"Account {row['account_name']} (id {row['account_id']}, status {row['account_status']}) "
+        f"initiated transaction {row['transaction_id']} for ${row['transaction_amount']} "
+        f"via {row['transaction_channel']} at {row['merchant_name']} ({row['merchant_category']}).\n"
+        f"The account used device {row['device_id']} ({row['device_type']}) and logged in from "
+        f"IP {row['ip_address']}. Contact: {row['email']} / {row['phone']}. "
+        f"Billing address: {row['billing_address']} ({row['billing_country']})."
+    )
+
+
+def build_medical_note(row: Dict) -> str:
+    return (
+        f"Patient {row['patient_name']} (id {row['patient_id']}) visited on {row['visit_date']} "
+        f"and was seen by {row['provider_name']}. Reported symptom: {row['symptom']}. "
+        f"Diagnosis: {row['diagnosis']}. Medication: {row['medication']}. "
+        f"Lab {row['lab_name']} = {row['lab_value']} {row['lab_unit']}."
+    )
+
+
+def build_notes(rows: List[Dict], domain_config: DomainConfig, state: WorldState) -> None:
+    domain_key = domain_config.key
+    notes_dir = os.path.join(NOTES_DIR, domain_key)
+    os.makedirs(notes_dir, exist_ok=True)
     notes = {}
     for row in rows:
-        note = (
-            f"For {row['product_name']}, the component {row['component_name']} is supplied by "
-            f"{row['supplier_name']} in {row['supplier_country']}.\n"
-            f"It is shipped to {row['factory_name']} at a cost of ${row['ship_cost_usd']}, "
-            f"taking {row['ship_time_days']} days and emitting {row['ship_co2_kg']} kg CO₂.\n"
-            f"The factory exports via {row['port_name']}, costing ${row['export_cost_usd']}, "
-            f"taking {row['export_time_days']} days and emitting {row['export_co2_kg']} kg CO₂.\n"
-            f"The shipment is imported to {row['market_country']} with cost "
-            f"${row['import_cost_usd']}, time {row['import_time_days']} days and emissions "
-            f"{row['import_co2_kg']} kg CO₂."
-        )
+        if domain_key == SUPPLY_CHAIN_CONFIG.key:
+            note = build_supply_chain_note(row)
+        elif domain_key == FRAUD_CONFIG.key:
+            note = build_fraud_note(row)
+        else:
+            note = build_medical_note(row)
         notes[row["row_id"]] = note
-        with open(os.path.join(NOTES_DIR, f"note_row_{row['row_id']}.txt"), "w", encoding="utf-8") as handle:
+        with open(os.path.join(notes_dir, f"note_row_{row['row_id']}.txt"), "w", encoding="utf-8") as handle:
             handle.write(note)
-    STATE.notes = notes
+    state.notes = notes
 
 
-def rows_to_csv(rows: List[Dict], max_rows: int = 200) -> str:
+def rows_to_csv(rows: List[Dict], domain_config: DomainConfig, max_rows: int = 200) -> str:
     if not rows:
         return ""
-    headers = [col for col in REQUIRED_COLUMNS if col in rows[0]]
+    headers = [col for col in domain_config.required_columns if col in rows[0]]
     def render_cell(value: object) -> str:
         text = "" if value is None else str(value)
         if any(ch in text for ch in [",", "\"", "\n"]):
@@ -642,9 +938,9 @@ def rows_to_csv(rows: List[Dict], max_rows: int = 200) -> str:
     return "\n".join(lines)
 
 
-def build_vector_store(llm: LLMHandler) -> SimpleVectorStore:
+def build_vector_store(llm: LLMHandler, state: WorldState) -> SimpleVectorStore:
     store = SimpleVectorStore()
-    for note_id, text in STATE.notes.items():
+    for note_id, text in state.notes.items():
         embedding = llm.embed(text)
         store.add(str(note_id), text, embedding)
     return store
@@ -667,7 +963,9 @@ def retrieve_notes(
     ]
 
 
-def scenario_summary(scenario: Dict) -> str:
+def scenario_summary(domain: str, scenario: Dict) -> str:
+    if normalize_domain(domain) != SUPPLY_CHAIN_CONFIG.key:
+        return "No scenario constraints applied."
     parts = []
     if scenario.get("supplierBOutage"):
         parts.append("Supplier B outage is active.")
@@ -687,9 +985,10 @@ def rag_answer(
     question: str,
     scenario_text: str,
     retrieved: List[Dict],
+    domain_config: DomainConfig,
     table_context: str | None = None,
 ) -> str:
-    prompt = build_rag_prompt(question, scenario_text, retrieved, table_context)
+    prompt = build_rag_prompt(question, scenario_text, retrieved, domain_config, table_context)
     #print("RAG PROMPT:\n", prompt)
     log_text("rag_prompt.txt", prompt)
     return llm.call(prompt, temperature=0.2)
@@ -699,12 +998,13 @@ def build_rag_prompt(
     question: str,
     scenario_text: str,
     retrieved: List[Dict],
+    domain_config: DomainConfig,
     table_context: str | None = None,
 ) -> str:
     notes_text = "\n\n".join([note["text"] for note in retrieved])
     table_block = f"Table (full data):\n{table_context}\n\n" if table_context else ""
     prompt = (
-        "You are a supply chain analyst. Use ONLY the provided context to answer. "
+        f"You are a {domain_config.rag_role}. Use ONLY the provided context to answer. "
         "If the context does not contain the answer, say you do not have enough evidence.\n\n"
         f"Scenario: {scenario_text}\n\n"
         f"Context:\n{notes_text}\n\n"
@@ -721,10 +1021,11 @@ def graphrag_fallback_answer(
     scenario_text: str,
     schema_summary: Dict,
     retrieved: List[Dict],
+    domain_config: DomainConfig,
 ) -> str:
     notes_text = "\n\n".join([note["text"] for note in retrieved])
     prompt = (
-        "You are a supply chain graph assistant. Use the schema summary and retrieved notes "
+        f"You are a {domain_config.label} graph assistant. Use the schema summary and retrieved notes "
         "to answer the question. If the answer is not present, explain the limitation.\n\n"
         f"Scenario: {scenario_text}\n\n"
         f"Graph Schema: {schema_summary}\n\n"
@@ -805,19 +1106,26 @@ def build_llm(config: LLMConfig) -> LLMHandler:
         raise HTTPException(status_code=500, detail=f"LLM init failed: {exc}") from exc
 
 
-def get_graph_store() -> GraphStore:
-    if STATE.graph_store:
-        return STATE.graph_store
+def get_graph_store(domain: str | None) -> GraphStore:
+    domain_config = get_domain_config(domain)
+    state = get_state(domain_config.key)
+    if state.graph_store:
+        return state.graph_store
     uri = os.getenv("NEO4J_URI")
     user = os.getenv("NEO4J_USER")
     password = os.getenv("NEO4J_PASSWORD")
     if not uri or not user or not password:
         raise HTTPException(status_code=500, detail="Missing Neo4j credentials in environment")
+    database = (
+        os.getenv(f"NEO4J_DB_{domain_config.key.upper()}")
+        or os.getenv("NEO4J_DB_DEFAULT")
+        or domain_config.key
+    )
     try:
-        store = GraphStore(uri, user, password)
-        with store.driver.session() as session:
+        store = GraphStore(uri, user, password, database=database, ontology_text=domain_config.ontology_text)
+        with store.driver.session(database=database) as session:
             session.run("RETURN 1")
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Neo4j connection failed: {exc}") from exc
-    STATE.graph_store = store
+    state.graph_store = store
     return store

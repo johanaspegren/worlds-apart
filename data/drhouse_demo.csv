@@ -1,0 +1,9 @@
+patient_id,patient_name,visit_id,visit_date,provider_id,provider_name,symptom,diagnosis,medication,lab_name,lab_value,lab_unit
+P12,Jordan Miles,V2001,2025-01-10,DR1,Dr. House,fever,viral syndrome,ibuprofen,CRP,4.2,mg/L
+P12,Jordan Miles,V2002,2025-01-11,DR2,Dr. Cameron,fatigue,autoimmune flare,prednisone,WBC,5.9,10^9/L
+P13,Riley Chen,V2003,2025-01-13,DR2,Dr. Cameron,fatigue,autoimmune flare,prednisone,WBC,7.2,10^9/L
+P13,Riley Chen,V2004,2025-01-14,DR1,Dr. House,cough,allergic reaction,antihistamine,ESR,8.9,mm/hr
+P14,Sam Patel,V2005,2025-01-16,DR1,Dr. House,cough,allergic reaction,antihistamine,ESR,10.2,mm/hr
+P14,Sam Patel,V2006,2025-01-17,DR2,Dr. Cameron,rash,viral syndrome,ibuprofen,CRP,11.9,mg/L
+P12,Jordan Miles,V2007,2025-01-20,DR1,Dr. House,fever,viral syndrome,ibuprofen,CRP,12.5,mg/L
+P12,Jordan Miles,V2008,2025-01-21,DR1,Dr. House,fever,viral syndrome,ibuprofen,WBC,13.2,10^9/L

@@ -12,11 +12,81 @@ const ragMetaList = document.getElementById('ragMetaList');
 const chatInput = document.getElementById('chatInput');
 const askButton = document.getElementById('askButton');
 const graphView = document.getElementById('graphView');
+const domainSelect = document.getElementById('domainSelect');
+const faqTitle = document.querySelector('.faq-title');
+const faqButtonsContainer = document.querySelector('.faq-buttons');
 
 const llmProvider = document.getElementById('llmProvider');
 const llmModel = document.getElementById('llmModel');
 const llmEmbedModel = document.getElementById('llmEmbedModel');
-const faqButtons = document.querySelectorAll('.faq-button');
+const DOMAIN_UI = {
+  supplychain: {
+    label: 'Supply Chain Assistant',
+    placeholder: 'Ask a question about the supply chain...',
+    faqs: [
+      {
+        label: 'Supplier B outage impact',
+        question: 'What happens if Supplier B is offline for two weeks?',
+      },
+      {
+        label: 'Carbon tax sensitivity',
+        question: 'How would a $0.10/kg CO₂ carbon tax change total cost by product?',
+      },
+      {
+        label: 'Lead time cap risk',
+        question: 'Which products break first if max lead time is capped at 10 days?',
+      },
+      {
+        label: 'Vietnam disruption',
+        question: 'Why does a disruption of supply in Vietnam affect Product Gamma but not Product Delta? Consider the BOM dependencies!',
+      },
+    ],
+  },
+  fraudfinder: {
+    label: 'Fraud Finder',
+    placeholder: 'Ask a question about fraud risk...',
+    faqs: [
+      {
+        label: 'Shared device risk',
+        question: 'Which accounts share a device with Account A17?',
+      },
+      {
+        label: 'Ring detection',
+        question: 'Show accounts connected through the same merchant and device.',
+      },
+      {
+        label: 'IP clustering',
+        question: 'Which accounts log in from the same IP as flagged accounts?',
+      },
+      {
+        label: 'Account explanation',
+        question: 'Why was Account A17 flagged as high risk?',
+      },
+    ],
+  },
+  drhouse: {
+    label: 'Dr House',
+    placeholder: 'Ask a question about patient patterns...',
+    faqs: [
+      {
+        label: 'Symptom clusters',
+        question: 'Which symptoms co-occur most often for Patient P12?',
+      },
+      {
+        label: 'Diagnosis rationale',
+        question: 'What evidence supports the diagnosis for Patient P12?',
+      },
+      {
+        label: 'Medication patterns',
+        question: 'Which medications are most common for this diagnosis?',
+      },
+      {
+        label: 'Lab anomalies',
+        question: 'Show abnormal lab patterns for Patient P12.',
+      },
+    ],
+  },
+};
 
 const uploadLabel = document.querySelector('.upload-label');
 
@@ -46,13 +116,56 @@ chatInput.addEventListener('keypress', (event) => {
   }
 });
 
-faqButtons.forEach((button) => {
-  button.addEventListener('click', () => {
-    const question = button.dataset.question || button.textContent.trim();
-    chatInput.value = question;
-    chatInput.focus();
+function currentDomain() {
+  const value = domainSelect?.value || 'supplychain';
+  return DOMAIN_UI[value] ? value : 'supplychain';
+}
+
+function renderFaqs(domainKey) {
+  const config = DOMAIN_UI[domainKey] || DOMAIN_UI.supplychain;
+  if (faqTitle) {
+    faqTitle.textContent = `${config.label} FAQs`;
+  }
+  if (!faqButtonsContainer) {
+    return;
+  }
+  faqButtonsContainer.innerHTML = '';
+  config.faqs.forEach((item) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.classList.add('faq-button');
+    button.dataset.question = item.question;
+    button.textContent = item.label;
+    button.addEventListener('click', () => {
+      chatInput.value = item.question;
+      chatInput.focus();
+    });
+    faqButtonsContainer.appendChild(button);
   });
-});
+}
+
+function applyDomain(domainKey) {
+  const config = DOMAIN_UI[domainKey] || DOMAIN_UI.supplychain;
+  if (chatInput) {
+    chatInput.placeholder = config.placeholder;
+  }
+  renderFaqs(domainKey);
+}
+
+if (domainSelect) {
+  const storedDomain = localStorage.getItem('wa_domain');
+  if (storedDomain && DOMAIN_UI[storedDomain]) {
+    domainSelect.value = storedDomain;
+  }
+  applyDomain(currentDomain());
+  domainSelect.addEventListener('change', () => {
+    const value = currentDomain();
+    localStorage.setItem('wa_domain', value);
+    applyDomain(value);
+  });
+} else {
+  applyDomain('supplychain');
+}
 
 async function handleUpload() {
   if (!fileInput.files.length) {
@@ -64,6 +177,7 @@ async function handleUpload() {
   formData.append('provider', llmProvider.value);
   formData.append('model', llmModel.value);
   formData.append('embed_model', llmEmbedModel.value);
+  formData.append('domain', currentDomain());
   uploadStatus.textContent = 'Uploading and rebuilding world...';
   try {
     const response = await fetch('/data/upload', {
@@ -110,6 +224,7 @@ async function handleAsk() {
       provider: llmProvider.value,
       model: llmModel.value,
       embed_model: llmEmbedModel.value,
+      domain: currentDomain(),
     };
 
     const ragPromise = streamEndpoint(

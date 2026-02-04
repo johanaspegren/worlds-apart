@@ -9,21 +9,28 @@ from app.modules.schemas.graph_schema import Entity, Relation, GraphResult
 
 
 class GraphStore:
-    def __init__(self, uri, user, pwd):
+    def __init__(self, uri, user, pwd, database: str | None = None, ontology_text: str | None = None):
         self.driver = GraphDatabase.driver(uri, auth=(user, pwd))
         self.log = logging.getLogger(__name__)
         self._schema_summary: Dict | None = None
+        self._database = database
+        self._ontology_text = ontology_text or self.get_supply_chain_ontology_text()
 
     def close(self):
         self.driver.close()
 
+    def _session(self):
+        if self._database:
+            return self.driver.session(database=self._database)
+        return self.driver.session()
+
     def has_data(self) -> bool:
-        with self.driver.session() as session:
+        with self._session() as session:
             count = session.run("MATCH (n) RETURN count(n) AS c").single()["c"]
         return count > 0
 
     def run_cypher(self, cypher: str, params: dict | None = None) -> List[Dict]:
-        with self.driver.session() as session:
+        with self._session() as session:
             rows = session.run(cypher, **(params or {})).data()
         return [self._serialize_row(row) for row in (rows or [])]
 
@@ -54,7 +61,7 @@ class GraphStore:
         return value
 
     def find_name_matches(self, term: str, limit: int = 5) -> List[Dict]:
-        with self.driver.session() as session:
+        with self._session() as session:
             rows = session.run(
                 """
                 MATCH (n)
@@ -68,8 +75,9 @@ class GraphStore:
         return rows or []
 
     def clear_graph(self):
-        with self.driver.session() as session:
+        with self._session() as session:
             session.run("MATCH (n) DETACH DELETE n")
+        self._schema_summary = None
 
     def fetch_subgraph(self, ids: List[str]) -> Dict[str, List[Dict]]:
         if not ids:
@@ -77,7 +85,7 @@ class GraphStore:
         unique_ids = list({str(value) for value in ids if value})
         if not unique_ids:
             return {"nodes": [], "edges": []}
-        with self.driver.session() as session:
+        with self._session() as session:
             node_rows = session.run(
                 "MATCH (n) WHERE n.id IN $ids RETURN n",
                 ids=unique_ids,
@@ -128,7 +136,7 @@ class GraphStore:
 
     def insert_supply_chain(self, rows: List[Dict]):
         self.log.info("Neo4j insert_supply_chain: %d rows", len(rows))
-        with self.driver.session() as session:
+        with self._session() as session:
             session.execute_write(self._upsert_supply_chain, rows)
 
     # ---------------------------------------------------------
@@ -137,7 +145,7 @@ class GraphStore:
     def get_schema_summary(self):
         if self._schema_summary is not None:
             return self._schema_summary
-        with self.driver.session() as session:
+        with self._session() as session:
             labels = session.run("CALL db.labels()").value()
             rel_types = session.run("CALL db.relationshipTypes()").value()
             props = session.run("""
@@ -182,6 +190,26 @@ class GraphStore:
             "- product_id, component_id, supplier_id, factory_id, port_id are node ids.\n"
         )
 
+    def get_ontology_text(self) -> str:
+        return self._ontology_text
+
+    def insert_rows(self, domain_key: str, rows: List[Dict]):
+        if domain_key == "supplychain":
+            return self.insert_supply_chain(rows)
+        if domain_key == "fraudfinder":
+            return self.insert_fraud(rows)
+        return self.insert_medical(rows)
+
+    def insert_fraud(self, rows: List[Dict]):
+        self.log.info("Neo4j insert_fraud: %d rows", len(rows))
+        with self._session() as session:
+            session.execute_write(self._upsert_fraud, rows)
+
+    def insert_medical(self, rows: List[Dict]):
+        self.log.info("Neo4j insert_medical: %d rows", len(rows))
+        with self._session() as session:
+            session.execute_write(self._upsert_medical, rows)
+
     # ---------------------------------------------------------
     # INGEST GRAPHRESULT INTO NEO4J
     # ---------------------------------------------------------
@@ -202,7 +230,7 @@ class GraphStore:
             len(relations),
         )
 
-        with self.driver.session() as session:
+        with self._session() as session:
             if entities:
                 session.execute_write(self._upsert_entities, entities)
             if relations:
@@ -309,7 +337,6 @@ class GraphStore:
             MERGE (market_country:Country {name: $market_country})
 
             MERGE (product)-[:USES {row_id: $row_id}]->(component)
-            MERGE (component)-[:SUPPLIED_BY {row_id: $row_id}]->(supplier)
             MERGE (supplier)-[:SUPPLIES {row_id: $row_id}]->(component)
             MERGE (factory)-[:PRODUCES {row_id: $row_id}]->(product)
 
@@ -335,6 +362,86 @@ class GraphStore:
         for row in rows:
             tx.run(cypher, **row)
 
+    @staticmethod
+    def _upsert_fraud(tx, rows: List[Dict]):
+        cypher = """
+            MERGE (account:Account {id: $account_id})
+            SET account.name = $account_name,
+                account.status = $account_status,
+                account.risk_score = $account_risk_score
+
+            MERGE (tx:Transaction {id: $transaction_id})
+            SET tx.amount = $transaction_amount,
+                tx.timestamp = $transaction_timestamp,
+                tx.channel = $transaction_channel
+
+            MERGE (merchant:Merchant {id: $merchant_id})
+            SET merchant.name = $merchant_name,
+                merchant.category = $merchant_category
+
+            MERGE (device:Device {id: $device_id})
+            SET device.type = $device_type,
+                device.fingerprint = $device_fingerprint
+
+            MERGE (email:Email {id: $email})
+            SET email.address = $email
+
+            MERGE (phone:Phone {id: $phone})
+            SET phone.number = $phone
+
+            MERGE (ip:IP {id: $ip_address})
+            SET ip.address = $ip_address
+
+            MERGE (address:Address {id: $billing_address})
+            SET address.country = $billing_country
+
+            MERGE (account)-[:INITIATED {row_id: $row_id}]->(tx)
+            MERGE (tx)-[:TO {row_id: $row_id}]->(merchant)
+            MERGE (account)-[:USES_DEVICE {row_id: $row_id}]->(device)
+            MERGE (account)-[:USES_EMAIL {row_id: $row_id}]->(email)
+            MERGE (account)-[:USES_PHONE {row_id: $row_id}]->(phone)
+            MERGE (account)-[:LOGGED_IN_FROM {row_id: $row_id}]->(ip)
+            MERGE (account)-[:HAS_ADDRESS {row_id: $row_id}]->(address)
+        """
+        for row in rows:
+            tx.run(cypher, **row)
+
+    @staticmethod
+    def _upsert_medical(tx, rows: List[Dict]):
+        cypher = """
+            MERGE (patient:Patient {id: $patient_id})
+            SET patient.name = $patient_name
+
+            MERGE (visit:Visit {id: $visit_id})
+            SET visit.date = $visit_date
+
+            MERGE (provider:Provider {id: $provider_id})
+            SET provider.name = $provider_name
+
+            MERGE (symptom:Symptom {id: $symptom})
+            SET symptom.name = $symptom
+
+            MERGE (diagnosis:Diagnosis {id: $diagnosis})
+            SET diagnosis.name = $diagnosis
+
+            MERGE (medication:Medication {id: $medication})
+            SET medication.name = $medication
+
+            MERGE (lab:LabTest {id: $lab_name})
+            SET lab.name = $lab_name,
+                lab.value = $lab_value,
+                lab.unit = $lab_unit
+
+            MERGE (patient)-[:HAD_VISIT {row_id: $row_id}]->(visit)
+            MERGE (provider)-[:ATTENDED {row_id: $row_id}]->(visit)
+            MERGE (visit)-[:HAS_SYMPTOM {row_id: $row_id}]->(symptom)
+            MERGE (visit)-[:RESULTED_IN {row_id: $row_id}]->(diagnosis)
+            MERGE (visit)-[:PRESCRIBED {row_id: $row_id}]->(medication)
+            MERGE (visit)-[:HAD_LAB {row_id: $row_id}]->(lab)
+        """
+        for row in rows:
+            tx.run(cypher, **row)
+
     # ---------------------------------------------------------
     # ENTITY RESOLUTION HELPERS
     # ---------------------------------------------------------
@@ -344,7 +451,7 @@ class GraphStore:
         Resolve a name/alias to an entity node.
         Returns dict with id, name, label, aliases, etc.
         """
-        with self.driver.session() as session:
+        with self._session() as session:
             # Exact name match
             res = session.run("""
                 MATCH (n)
@@ -397,7 +504,7 @@ class GraphStore:
 
         params = {"id1": id1, "id2": id2}
 
-        with self.driver.session() as session:
+        with self._session() as session:
             rows = session.run(cypher, **params).data()
 
         return {

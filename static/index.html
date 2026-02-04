@@ -24,6 +24,14 @@
     </div>
     <div class="llm-controls">
       <div class="control">
+        <label for="domainSelect">Mode</label>
+        <select id="domainSelect">
+          <option value="supplychain" selected>Supply Chain Assistant</option>
+          <option value="fraudfinder">Fraud Finder</option>
+          <option value="drhouse">Dr House</option>
+        </select>
+      </div>
+      <div class="control">
         <label for="llmProvider">LLM provider</label>
         <select id="llmProvider">
           <option value="openai" selected>OpenAI</option>
@@ -82,7 +90,7 @@
   </main>
 
   <footer class="chat-panel">
-    <input id="chatInput" type="text" placeholder="Ask a question about the supply chain..." value="Why does a disruption in Vietnam affect Product Gamma but not Product Delta?" />
+    <input id="chatInput" type="text" placeholder="Ask a question about the supply chain..." value="" />
     <button id="askButton">Ask</button>
   </footer>
 

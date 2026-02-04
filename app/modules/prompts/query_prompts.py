@@ -49,7 +49,7 @@ EXPLAIN_PROMPT = """
 """
 
 CYPHER_PROMPT = """
-    You are a Neo4j Cypher generator for a supply chain knowledge graph.
+    You are a Neo4j Cypher generator for a {DOMAIN_NAME} knowledge graph.
     Use the schema/ontology below to write READ-ONLY queries.
 
     Rules:
@@ -70,11 +70,10 @@ CYPHER_PROMPT = """
       1) identify candidate paths/nodes, 2) compute costs, 3) list top results.
     - Include LIMIT 50 unless the query is an aggregate.
     - Relationship directions are STRICT and MUST follow the ontology exactly.
-    - Prefer SUPPLIES when connecting Supplier -> Component unless the question explicitly asks for "supplied by".
     - Never reverse relationship directions.
     - Prefer existence and dependency paths over metrics unless explicitly requested.
-    - Do NOT access relationship properties unless the question asks for cost, time, emissions, or optimisation.
-    - Risk questions should focus on dependency, concentration, and single points of failure.
+    - Do NOT access relationship properties unless explicitly requested.
+    - Follow domain guidance below.
 
     Schema / Ontology:
     {SCHEMA}
@@ -86,18 +85,13 @@ CYPHER_PROMPT = """
     {RESOLVED_ENTITIES}
 
     Canonical direction patterns (COPY EXACTLY):
-    - USES:        (p:Product)-[:USES]->(comp:Component)
-    - SUPPLIES:    (s:Supplier)-[:SUPPLIES]->(comp:Component)
-    - PRODUCES:    (f:Factory)-[:PRODUCES]->(p:Product)
-    - LOCATED_IN:  (x)-[:LOCATED_IN]->(c:Country)
-    - SHIPS_TO:    (s:Supplier)-[:SHIPS_TO]->(f:Factory)
-    - EXPORTS_VIA: (f:Factory)-[:EXPORTS_VIA]->(port:Port)
-    - IMPORTS_TO:  (port:Port)-[:IMPORTS_TO]->(c:Country)
+    {CANONICAL_PATTERNS}
 
     Forbidden (WRONG) patterns:
-    - (:Component)-[:SUPPLIES]->(:Supplier)
-    - (:Product)-[:PRODUCES]->(:Factory)
-    - (:Country)-[:LOCATED_IN]->(:Supplier)
+    {FORBIDDEN_PATTERNS}
+
+    Domain guidance:
+    {DOMAIN_GUIDANCE}
 
     Relationship names do NOT imply direction.
     Always follow the canonical direction patterns, even if they feel semantically reversed.
@@ -121,7 +115,7 @@ CYPHER_PROMPT = """
 """
 
 ANSWER_PROMPT = """
-You are a supply chain graph assistant.
+You are a {DOMAIN_ASSISTANT}.
 
 CRITICAL RULES:
 - Use ONLY the provided Cypher results.

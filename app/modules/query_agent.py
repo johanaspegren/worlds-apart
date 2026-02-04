@@ -48,16 +48,17 @@ class VerificationQuery(BaseModel):
 
 
 class QueryAgent:
-    def __init__(self, llm: LLMHandler, graph_store: GraphStore):
+    def __init__(self, llm: LLMHandler, graph_store: GraphStore, domain_config):
         self.llm = llm
         self.graph_store = graph_store
+        self.domain = domain_config
         self.log = logging.getLogger(__name__)
 
     # ---------------------------
     # 1. Extract mentions
     # ---------------------------
     def extract_mentions(self, question: str):
-        schema_text = self.graph_store.get_supply_chain_ontology_text()
+        schema_text = self.graph_store.get_ontology_text()
         prompt = MENTION_PROMPT.format(SCHEMA=schema_text) + f'\n\nQuestion:\n"{question}"\n'
         self.log.info(f"Extract mentions prompt: {prompt}")
 
@@ -157,7 +158,7 @@ class QueryAgent:
         ent_txt = str(connection["entity1"]) + "\n" + str(connection["entity2"])
         rel_txt = str(connection["relationships"])
 
-        schema_text = self.graph_store.get_supply_chain_ontology_text()
+        schema_text = self.graph_store.get_ontology_text()
         prompt = EXPLAIN_PROMPT.format(
             SCHEMA=schema_text,
             ENTITIES=ent_txt,
@@ -213,11 +214,15 @@ class QueryAgent:
     # Cypher-first GraphRAG
     # ---------------------------
     def generate_cypher_queries(self, question: str, scenario_text: str | None = None):
-        schema_text = self.graph_store.get_supply_chain_ontology_text()
+        schema_text = self.graph_store.get_ontology_text()
         schema_summary = self.graph_store.get_schema_summary()
         mentions = self.extract_mentions(question)
         resolved_entities = self.resolve_entities(mentions)
         prompt = CYPHER_PROMPT.format(
+            DOMAIN_NAME=self.domain.label,
+            DOMAIN_GUIDANCE=self.domain.domain_guidance,
+            CANONICAL_PATTERNS=self.domain.canonical_patterns,
+            FORBIDDEN_PATTERNS=self.domain.forbidden_patterns or "None.",
             SCHEMA=schema_text,
             SCHEMA_SUMMARY=schema_summary,
             RESOLVED_ENTITIES=resolved_entities or "No entities resolved.",
@@ -293,8 +298,9 @@ class QueryAgent:
         return self.llm.call(prompt, temperature=0.2)
 
     def build_cypher_answer_prompt(self, question: str, scenario_text: str | None, results) -> str:
-        schema_text = self.graph_store.get_supply_chain_ontology_text()
+        schema_text = self.graph_store.get_ontology_text()
         return ANSWER_PROMPT.format(
+            DOMAIN_ASSISTANT=self.domain.label,
             SCHEMA=schema_text,
             SCENARIO=scenario_text or "No scenario constraints applied.",
             QUESTION=question,
@@ -325,8 +331,9 @@ class QueryAgent:
         queries,
         results,
     ):
-        schema_text = self.graph_store.get_supply_chain_ontology_text()
+        schema_text = self.graph_store.get_ontology_text()
         prompt = VERIFY_PROMPT.format(
+            DOMAIN_NAME=self.domain.label,
             SCHEMA=schema_text,
             SCENARIO=scenario_text or "No scenario constraints applied.",
             QUESTION=question,
