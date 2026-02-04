@@ -47,8 +47,8 @@ const DOMAIN_UI = {
     placeholder: 'Ask a question about fraud risk...',
     faqs: [
       {
-        label: 'Shared device risk',
-        question: 'Which accounts share a device with Account A17?',
+        label: 'General check',
+        question: 'Is there anything fishy going on here, based on the data?',
       },
       {
         label: 'Ring detection',

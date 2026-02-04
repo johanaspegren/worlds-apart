@@ -179,8 +179,8 @@ FRAUD_CONFIG = DomainConfig(
     question_placeholder="Ask a question about fraud risk...",
     faq=[
         {
-            "label": "Shared device risk",
-            "question": "Which accounts share a device with Account A17?",
+            "label": "General check",
+            "question": "is there anything fishy going on here, based on the data?",
         },
         {
             "label": "Ring detection",
