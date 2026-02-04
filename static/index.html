@@ -13,24 +13,13 @@
       <input id="fileInput" type="file" accept=".csv,.xlsx" />
       <div id="uploadStatus" class="upload-status">No file uploaded.</div>
     </div>
-    <div class="scenario-controls">
-      <div class="control">
-        <label>
-          <input type="checkbox" id="supplierOutage" />
-          Supplier B outage
-        </label>
-      </div>
-      <div class="control">
-        <label>
-          <input type="checkbox" id="carbonTaxEnabled" />
-          Carbon tax
-        </label>
-        <input type="number" id="carbonTaxRate" step="0.01" value="0.10" />
-        <span>$/kg CO₂</span>
-      </div>
-      <div class="control">
-        <label for="maxLeadTime">Max lead time (days)</label>
-        <input type="number" id="maxLeadTime" min="0" value="0" />
+    <div class="faq-controls">
+      <div class="faq-title">FAQs</div>
+      <div class="faq-buttons">
+        <button class="faq-button" type="button" data-question="What happens if Supplier B is offline for two weeks?">Supplier B outage impact</button>
+        <button class="faq-button" type="button" data-question="How would a $0.10/kg CO₂ carbon tax change total cost by product?">Carbon tax sensitivity</button>
+        <button class="faq-button" type="button" data-question="Which products break first if max lead time is capped at 10 days?">Lead time cap risk</button>
+        <button class="faq-button" type="button" data-question="Why does a disruption in Vietnam affect Product Gamma but not Product Delta?">Vietnam disruption</button>
       </div>
     </div>
     <div class="llm-controls">

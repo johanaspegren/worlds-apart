@@ -11,13 +11,10 @@ const ragMetaList = document.getElementById('ragMetaList');
 const chatInput = document.getElementById('chatInput');
 const askButton = document.getElementById('askButton');
 
-const supplierOutage = document.getElementById('supplierOutage');
-const carbonTaxEnabled = document.getElementById('carbonTaxEnabled');
-const carbonTaxRate = document.getElementById('carbonTaxRate');
-const maxLeadTime = document.getElementById('maxLeadTime');
 const llmProvider = document.getElementById('llmProvider');
 const llmModel = document.getElementById('llmModel');
 const llmEmbedModel = document.getElementById('llmEmbedModel');
+const faqButtons = document.querySelectorAll('.faq-button');
 
 const uploadLabel = document.querySelector('.upload-label');
 
@@ -47,14 +44,13 @@ chatInput.addEventListener('keypress', (event) => {
   }
 });
 
-function getScenario() {
-  return {
-    supplierBOutage: supplierOutage.checked,
-    carbonTaxEnabled: carbonTaxEnabled.checked,
-    carbonTaxRate: parseFloat(carbonTaxRate.value || '0.1'),
-    maxLeadTimeDays: parseInt(maxLeadTime.value || '0', 10),
-  };
-}
+faqButtons.forEach((button) => {
+  button.addEventListener('click', () => {
+    const question = button.dataset.question || button.textContent.trim();
+    chatInput.value = question;
+    chatInput.focus();
+  });
+});
 
 async function handleUpload() {
   if (!fileInput.files.length) {
@@ -101,12 +97,10 @@ async function handleAsk() {
   ragMetaList.innerHTML = '';
   setLoading(ragOutput, true);
   setLoading(graphOutput, true);
-  const scenario = getScenario();
-
   try {
     const payload = {
       question,
-      scenario,
+      scenario: {},
       provider: llmProvider.value,
       model: llmModel.value,
       embed_model: llmEmbedModel.value,
