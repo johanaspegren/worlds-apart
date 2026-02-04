@@ -1,0 +1,80 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+2 0 obj
+<< /Length 1562 >>
+stream
+BT /F1 26 Tf 72 740 Td (Worlds Apart) Tj ET
+BT /F1 14 Tf 72 712 Td (Reliable AI for supply-chain decisions) Tj ET
+BT /F1 16 Tf 72 676 Td (What it is) Tj ET
+BT /F1 11 Tf 72 658 Td (A decision-support tool that combines two AI approaches:) Tj ET
+BT /F1 11 Tf 72 644 Td (1\) Neural recall \(RAG\) to summarize relevant data, and) Tj ET
+BT /F1 11 Tf 72 630 Td (2\) A symbolic graph model to explain relationships with evidence.) Tj ET
+BT /F1 16 Tf 72 596 Td (Why it matters) Tj ET
+BT /F1 11 Tf 72 578 Td (Most AI answers sound confident but are hard to trust.) Tj ET
+BT /F1 11 Tf 72 564 Td (Worlds Apart adds verification: every claim can be traced) Tj ET
+BT /F1 11 Tf 72 550 Td (to the underlying supply-chain graph and shown visually.) Tj ET
+BT /F1 16 Tf 72 516 Td (How it works) Tj ET
+BT /F1 11 Tf 72 498 Td (1\) Upload your data \(CSV/Excel\).) Tj ET
+BT /F1 11 Tf 72 484 Td (2\) Ask a question in plain language.) Tj ET
+BT /F1 11 Tf 72 470 Td (3\) The system generates Cypher queries to the graph.) Tj ET
+BT /F1 11 Tf 72 456 Td (4\) It answers with evidence and a verification query.) Tj ET
+72 206 468 200 re S
+BT /F1 12 Tf 90 296 Td (Screenshot placeholder: Main UI overview) Tj ET
+BT /F1 16 Tf 72 174 Td (Key capabilities) Tj ET
+BT /F1 11 Tf 72 156 Td (- Natural-language questions about products, suppliers, and risk) Tj ET
+BT /F1 11 Tf 72 142 Td (- Dual answers: RAG summary + GraphRAG evidence) Tj ET
+BT /F1 11 Tf 72 128 Td (- Verification query to prove claims in the graph) Tj ET
+BT /F1 11 Tf 72 114 Td (- Visual graph view of the returned evidence) Tj ET
+endstream
+endobj
+3 0 obj
+<< /Length 1160 >>
+stream
+BT /F1 20 Tf 72 740 Td (Reliability built in) Tj ET
+BT /F1 14 Tf 72 710 Td (Evidence-first answers) Tj ET
+BT /F1 11 Tf 72 692 Td (Answers are grounded in the exact graph queries executed.) Tj ET
+BT /F1 11 Tf 72 678 Td (If evidence is missing, the system says so explicitly.) Tj ET
+BT /F1 14 Tf 72 644 Td (Verification query) Tj ET
+BT /F1 11 Tf 72 626 Td (After answering, Worlds Apart generates a final Cypher query) Tj ET
+BT /F1 11 Tf 72 612 Td (that verifies the claim and returns the proof subgraph.) Tj ET
+72 382 468 220 re S
+BT /F1 12 Tf 90 482 Td (Screenshot placeholder: Verification graph view) Tj ET
+BT /F1 14 Tf 72 350 Td (Who it's for) Tj ET
+BT /F1 11 Tf 72 332 Td (- Supply-chain leaders who need defensible answers) Tj ET
+BT /F1 11 Tf 72 318 Td (- Ops and risk teams evaluating disruptions) Tj ET
+BT /F1 11 Tf 72 304 Td (- Analysts who need fast, explainable traceability) Tj ET
+BT /F1 14 Tf 72 278 Td (Next steps) Tj ET
+BT /F1 11 Tf 72 260 Td (- Share a sample dataset to tailor the demo) Tj ET
+BT /F1 11 Tf 72 246 Td (- Add your own KPIs \(cost, time, emissions\)) Tj ET
+BT /F1 11 Tf 72 232 Td (- Deploy as a secure internal decision tool) Tj ET
+endstream
+endobj
+4 0 obj
+<< /Type /Page /Parent 6 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 1 0 R >> >> /Contents 2 0 R >>
+endobj
+5 0 obj
+<< /Type /Page /Parent 6 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 1 0 R >> >> /Contents 3 0 R >>
+endobj
+6 0 obj
+<< /Type /Pages /Kids [4 0 R 5 0 R] /Count 2 >>
+endobj
+7 0 obj
+<< /Type /Catalog /Pages 6 0 R >>
+endobj
+xref
+0 8
+0000000000 65535 f 
+0000000009 00000 n 
+0000000079 00000 n 
+0000001693 00000 n 
+0000002905 00000 n 
+0000003031 00000 n 
+0000003157 00000 n 
+0000003220 00000 n 
+trailer
+<< /Size 8 /Root 7 0 R >>
+startxref
+3269
+%%EOF

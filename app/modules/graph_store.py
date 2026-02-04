@@ -86,7 +86,7 @@ class GraphStore:
                 """
                 MATCH (a)-[r]-(b)
                 WHERE a.id IN $ids AND b.id IN $ids
-                RETURN a, b, r
+                RETURN a.id AS source, b.id AS target, type(r) AS type, properties(r) AS properties
                 """,
                 ids=unique_ids,
             ).data()
@@ -111,22 +111,16 @@ class GraphStore:
 
         edges = []
         for row in edge_rows or []:
-            source = row.get("a")
-            target = row.get("b")
-            rel = row.get("r")
-            if source is None or target is None or rel is None:
-                continue
-            rel_type = rel.type if hasattr(rel, "type") else None
-            source_id = source.get("id") if hasattr(source, "get") else None
-            target_id = target.get("id") if hasattr(target, "get") else None
+            source_id = row.get("source")
+            target_id = row.get("target")
             if not source_id or not target_id:
                 continue
             edges.append(
                 {
                     "source": str(source_id),
                     "target": str(target_id),
-                    "type": rel_type or "RELATED_TO",
-                    "properties": dict(rel) if hasattr(rel, "items") else {},
+                    "type": row.get("type") or "RELATED_TO",
+                    "properties": row.get("properties") or {},
                 }
             )
 
