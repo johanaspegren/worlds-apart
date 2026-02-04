@@ -114,6 +114,8 @@ async function handleAsk() {
       (event) => {
         if (event.type === 'token') {
           ragOutput.textContent += event.content;
+        } else if (event.type === 'status') {
+          ragOutput.textContent = event.message || 'Working...';
         } else if (event.type === 'error') {
           ragOutput.textContent = `Error: ${event.message}`;
           setLoading(ragOutput, false);
@@ -133,6 +135,8 @@ async function handleAsk() {
       (event) => {
         if (event.type === 'queries') {
           renderQueryResults(event.results || []);
+        } else if (event.type === 'status') {
+          traceSummary.textContent = event.message || 'Working...';
         } else if (event.type === 'token') {
           graphOutput.textContent += event.content;
         } else if (event.type === 'error') {

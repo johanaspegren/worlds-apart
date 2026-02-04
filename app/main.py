@@ -300,7 +300,9 @@ def chat_rag_stream(payload: Dict):
     prompt = build_rag_prompt(question, scenario_text, retrieved, table_context or None)
 
     def event_stream():
+        yield f"data: {json.dumps({'type': 'status', 'message': 'Retrieving context...'})}\n\n"
         yield f"data: {json.dumps({'type': 'meta', 'retrieval': retrieved, 'scenario': scenario_text})}\n\n"
+        yield f"data: {json.dumps({'type': 'status', 'message': 'Generating answer...'})}\n\n"
         for chunk in llm.stream(prompt, temperature=0.2):
             if "error" in chunk:
                 yield f"data: {json.dumps({'type': 'error', 'message': chunk['error']})}\n\n"
@@ -337,15 +339,22 @@ def chat_graphrag_stream(payload: Dict):
         raise HTTPException(status_code=400, detail="No graph data available")
 
     def event_stream():
-        connection = agent.ask_cypher(question, scenario_text)
+        yield f"data: {json.dumps({'type': 'status', 'message': 'Generating Cypher queries...'})}\n\n"
+        queries = agent.generate_cypher_queries_only(question, scenario_text)
+        if queries:
+            log_json("cypher_queries.json", {"queries": queries})
+        yield f"data: {json.dumps({'type': 'status', 'message': 'Querying database...'})}\n\n"
+        results = agent.execute_cypher_queries(queries) if queries else []
+        log_json("cypher_execution_results.json", {"results": results})
         payload = {
             "type": "queries",
-            "queries": connection.get("queries"),
-            "results": connection.get("results"),
+            "queries": queries,
+            "results": results,
             "scenario": scenario_text,
         }
         yield f"data: {json.dumps(payload)}\n\n"
-        prompt = agent.build_cypher_answer_prompt(question, scenario_text, connection.get("results"))
+        yield f"data: {json.dumps({'type': 'status', 'message': 'Generating answer...'})}\n\n"
+        prompt = agent.build_cypher_answer_prompt(question, scenario_text, results)
         for chunk in llm.stream(prompt, temperature=0.2):
             if "error" in chunk:
                 yield f"data: {json.dumps({'type': 'error', 'message': chunk['error']})}\n\n"

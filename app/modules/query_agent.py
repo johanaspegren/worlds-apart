@@ -294,6 +294,8 @@ class QueryAgent:
 
     def ask_cypher(self, question: str, scenario_text: str | None = None):
         queries = self.generate_cypher_queries(question, scenario_text)
+        if queries:
+            log_json("cypher_queries.json", {"queries": queries})
         results = self.execute_cypher_queries(queries) if queries else []
         log_json("cypher_execution_results.json", {"results": results})
         answer = self.answer_from_cypher(question, scenario_text, results)
@@ -302,3 +304,6 @@ class QueryAgent:
             "queries": queries,
             "results": results,
         }
+
+    def generate_cypher_queries_only(self, question: str, scenario_text: str | None = None):
+        return self.generate_cypher_queries(question, scenario_text)
