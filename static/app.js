@@ -6,6 +6,8 @@ const traceSummary = document.getElementById('traceSummary');
 const traceList = document.getElementById('traceList');
 const querySummary = document.getElementById('querySummary');
 const queryList = document.getElementById('queryList');
+const ragMetaSummary = document.getElementById('ragMetaSummary');
+const ragMetaList = document.getElementById('ragMetaList');
 const chatInput = document.getElementById('chatInput');
 const askButton = document.getElementById('askButton');
 
@@ -95,6 +97,8 @@ async function handleAsk() {
   traceList.innerHTML = '';
   querySummary.textContent = '';
   queryList.innerHTML = '';
+  ragMetaSummary.textContent = '';
+  ragMetaList.innerHTML = '';
   setLoading(ragOutput, true);
   setLoading(graphOutput, true);
   const scenario = getScenario();
@@ -116,6 +120,8 @@ async function handleAsk() {
           ragOutput.textContent += event.content;
         } else if (event.type === 'status') {
           ragOutput.textContent = event.message || 'Working...';
+        } else if (event.type === 'meta') {
+          renderRagMeta(event.retrieval || [], event.scenario);
         } else if (event.type === 'error') {
           ragOutput.textContent = `Error: ${event.message}`;
           setLoading(ragOutput, false);
@@ -169,6 +175,32 @@ function setLoading(element, isLoading) {
   } else {
     element.classList.remove('loading');
   }
+}
+
+function renderRagMeta(matches, scenarioText) {
+  ragMetaList.innerHTML = '';
+  if (scenarioText) {
+    ragMetaSummary.textContent = scenarioText;
+  }
+  if (!matches.length) {
+    ragMetaList.innerHTML = '<div class="query-empty">No retrieved documents.</div>';
+    return;
+  }
+  ragMetaSummary.textContent = `Retrieved ${matches.length} documents.`;
+  matches.forEach((match, index) => {
+    const wrapper = document.createElement('div');
+    wrapper.classList.add('query-block');
+    const heading = document.createElement('div');
+    heading.classList.add('query-heading');
+    const score = typeof match.score === 'number' ? match.score.toFixed(4) : 'n/a';
+    heading.textContent = `Doc ${index + 1} | score ${score} | id ${match.id}`;
+    const body = document.createElement('pre');
+    body.classList.add('query-rows');
+    body.textContent = match.text || '';
+    wrapper.appendChild(heading);
+    wrapper.appendChild(body);
+    ragMetaList.appendChild(wrapper);
+  });
 }
 
 function renderQueryResults(results) {
