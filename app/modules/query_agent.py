@@ -12,6 +12,7 @@ from app.modules.prompts.query_prompts import (
     EXPLAIN_PROMPT,
     CYPHER_PROMPT,
     ANSWER_PROMPT,
+    VERIFY_PROMPT,
 )
 
 from app.modules.file_utils import log_json, log_cypher_queries, log_text
@@ -36,6 +37,14 @@ class CypherQueryList(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     queries: list[CypherQuery] = Field(default_factory=list)
+
+
+class VerificationQuery(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    cypher: str = Field(default="")
+    params: list[CypherParam] = Field(default_factory=list)
+    reason: str | None = None
 
 
 class QueryAgent:
@@ -307,3 +316,39 @@ class QueryAgent:
 
     def generate_cypher_queries_only(self, question: str, scenario_text: str | None = None):
         return self.generate_cypher_queries(question, scenario_text)
+
+    def generate_verification_query(
+        self,
+        question: str,
+        scenario_text: str | None,
+        answer: str,
+        queries,
+        results,
+    ):
+        schema_text = self.graph_store.get_supply_chain_ontology_text()
+        prompt = VERIFY_PROMPT.format(
+            SCHEMA=schema_text,
+            SCENARIO=scenario_text or "No scenario constraints applied.",
+            QUESTION=question,
+            ANSWER=answer or "",
+            QUERIES=queries or [],
+            RESULTS=results or [],
+        )
+        log_text("verify_prompt.txt", prompt)
+        result = self.llm.call_schema_prompt(prompt, VerificationQuery, temperature=0.1)
+
+        if isinstance(result, VerificationQuery):
+            item = result
+        elif isinstance(result, dict):
+            item = VerificationQuery.model_validate(result)
+        else:
+            return None
+
+        cypher = (item.cypher or "").strip()
+        if not cypher:
+            return None
+        return {
+            "cypher": cypher,
+            "params": {param.key: param.value for param in (item.params or [])},
+            "reason": item.reason,
+        }

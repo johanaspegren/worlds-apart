@@ -260,11 +260,23 @@ def chat_graphrag(payload: Dict) -> Dict:
 
     connection = agent.ask_cypher(question, scenario_text)
 
+    graph = build_graph_from_results(graph_store, connection.get("results") or [])
+    verification = run_verification_query(
+        agent=agent,
+        graph_store=graph_store,
+        question=question,
+        scenario_text=scenario_text,
+        answer=connection.get("answer") or "",
+        queries=connection.get("queries") or [],
+        results=connection.get("results") or [],
+    )
     retval = {
         "answer": connection.get("answer"),
         "scenario": scenario_text,
         "queries": connection.get("queries"),
         "results": connection.get("results"),
+        "graph": graph,
+        "verification": verification,
         "llm_provider": llm_config.provider,
         "llm_model": llm_config.model,
     }
@@ -346,22 +358,37 @@ def chat_graphrag_stream(payload: Dict):
         yield f"data: {json.dumps({'type': 'status', 'message': 'Querying database...'})}\n\n"
         results = agent.execute_cypher_queries(queries) if queries else []
         log_json("cypher_execution_results.json", {"results": results})
+        graph = build_graph_from_results(graph_store, results)
         payload = {
             "type": "queries",
             "queries": queries,
             "results": results,
             "scenario": scenario_text,
+            "graph": graph,
         }
         yield f"data: {json.dumps(payload)}\n\n"
         yield f"data: {json.dumps({'type': 'status', 'message': 'Generating answer...'})}\n\n"
         prompt = agent.build_cypher_answer_prompt(question, scenario_text, results)
+        answer_chunks = []
         for chunk in llm.stream(prompt, temperature=0.2):
             if "error" in chunk:
                 yield f"data: {json.dumps({'type': 'error', 'message': chunk['error']})}\n\n"
                 return
             content = chunk.get("content", "")
             if content:
+                answer_chunks.append(content)
                 yield f"data: {json.dumps({'type': 'token', 'content': content})}\n\n"
+        answer_text = "".join(answer_chunks)
+        verification = run_verification_query(
+            agent=agent,
+            graph_store=graph_store,
+            question=question,
+            scenario_text=scenario_text,
+            answer=answer_text,
+            queries=queries,
+            results=results,
+        )
+        yield f"data: {json.dumps({'type': 'verify', 'verification': verification})}\n\n"
         yield "data: {\"type\": \"done\"}\n\n"
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
@@ -426,6 +453,108 @@ def chat_both(payload: Dict) -> Dict:
     rag = chat_rag(payload)
     graphrag = chat_graphrag(payload)
     return {"rag": rag, "graphrag": graphrag}
+
+
+def build_graph_from_results(graph_store: GraphStore, results: List[Dict]) -> Dict:
+    if not results:
+        return {"nodes": [], "edges": []}
+    id_keys = {
+        "supplier_id",
+        "component_id",
+        "product_id",
+        "factory_id",
+        "port_id",
+    }
+    collected = set()
+    def collect_from_value(value: object) -> None:
+        if value is None:
+            return
+        if isinstance(value, dict):
+            value_type = value.get("_type")
+            if value_type == "node":
+                node_id = value.get("id")
+                if node_id:
+                    collected.add(str(node_id))
+                return
+            if value_type == "relationship":
+                source_id = value.get("source")
+                target_id = value.get("target")
+                if source_id:
+                    collected.add(str(source_id))
+                if target_id:
+                    collected.add(str(target_id))
+                return
+            if "id" in value:
+                node_id = value.get("id")
+                if node_id:
+                    collected.add(str(node_id))
+            for nested in value.values():
+                collect_from_value(nested)
+            return
+        if isinstance(value, list):
+            for item in value:
+                collect_from_value(item)
+            return
+    for result in results:
+        for row in result.get("rows") or []:
+            if not isinstance(row, dict):
+                continue
+            for key, value in row.items():
+                collect_from_value(value)
+                if key in id_keys or key.endswith("_id"):
+                    if value is None:
+                        continue
+                    collected.add(str(value))
+    if not collected:
+        return {"nodes": [], "edges": []}
+    collected_list = sorted(collected)
+    if len(collected_list) > 80:
+        collected_list = collected_list[:80]
+    return graph_store.fetch_subgraph(collected_list)
+
+
+def run_verification_query(
+    agent: QueryAgent,
+    graph_store: GraphStore,
+    question: str,
+    scenario_text: str | None,
+    answer: str,
+    queries: List[Dict],
+    results: List[Dict],
+) -> Dict:
+    verify_query = agent.generate_verification_query(
+        question=question,
+        scenario_text=scenario_text,
+        answer=answer,
+        queries=queries,
+        results=results,
+    )
+    log_text("verification_query.txt", json.dumps(verify_query, indent=2, ensure_ascii=False))
+    log_json("verification_queries.json", {"query": verify_query})
+    if not verify_query:
+        return {"query": None, "result": None, "graph": {"nodes": [], "edges": []}}
+    try:
+        rows = graph_store.run_cypher(verify_query["cypher"], verify_query.get("params") or {})
+        result = {
+            "cypher": verify_query["cypher"],
+            "params": verify_query.get("params") or {},
+            "reason": verify_query.get("reason"),
+            "row_count": len(rows),
+            "rows": rows[:50],
+        }
+    except Exception as exc:
+        result = {
+            "cypher": verify_query["cypher"],
+            "params": verify_query.get("params") or {},
+            "reason": verify_query.get("reason"),
+            "error": str(exc),
+            "row_count": 0,
+            "rows": [],
+        }
+    log_text("verification_cypher_results.txt", json.dumps(result, indent=2, ensure_ascii=False))
+    graph = build_graph_from_results(graph_store, [result])
+    log_text("verification_graph.json", json.dumps(graph, indent=2, ensure_ascii=False))
+    return {"query": verify_query, "result": result, "graph": graph}
 
 
 def parse_csv(content: bytes) -> List[Dict]:

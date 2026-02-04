@@ -1,8 +1,9 @@
 # modules/graph_store.py
 
 import logging
-from typing import Dict, List
+from typing import Dict, List, Any
 from neo4j import GraphDatabase
+from neo4j.graph import Node, Relationship
 
 from app.modules.schemas.graph_schema import Entity, Relation, GraphResult
 
@@ -24,7 +25,33 @@ class GraphStore:
     def run_cypher(self, cypher: str, params: dict | None = None) -> List[Dict]:
         with self.driver.session() as session:
             rows = session.run(cypher, **(params or {})).data()
-        return rows or []
+        return [self._serialize_row(row) for row in (rows or [])]
+
+    def _serialize_row(self, row: Dict[str, Any]) -> Dict[str, Any]:
+        return {key: self._serialize_value(value) for key, value in row.items()}
+
+    def _serialize_value(self, value: Any) -> Any:
+        if isinstance(value, Node):
+            labels = list(value.labels) if value.labels else []
+            return {
+                "_type": "node",
+                "id": value.get("id"),
+                "labels": labels,
+                "properties": dict(value),
+            }
+        if isinstance(value, Relationship):
+            return {
+                "_type": "relationship",
+                "type": value.type,
+                "source": value.start_node.get("id"),
+                "target": value.end_node.get("id"),
+                "properties": dict(value),
+            }
+        if isinstance(value, list):
+            return [self._serialize_value(item) for item in value]
+        if isinstance(value, dict):
+            return {key: self._serialize_value(item) for key, item in value.items()}
+        return value
 
     def find_name_matches(self, term: str, limit: int = 5) -> List[Dict]:
         with self.driver.session() as session:
@@ -43,6 +70,67 @@ class GraphStore:
     def clear_graph(self):
         with self.driver.session() as session:
             session.run("MATCH (n) DETACH DELETE n")
+
+    def fetch_subgraph(self, ids: List[str]) -> Dict[str, List[Dict]]:
+        if not ids:
+            return {"nodes": [], "edges": []}
+        unique_ids = list({str(value) for value in ids if value})
+        if not unique_ids:
+            return {"nodes": [], "edges": []}
+        with self.driver.session() as session:
+            node_rows = session.run(
+                "MATCH (n) WHERE n.id IN $ids RETURN n",
+                ids=unique_ids,
+            ).data()
+            edge_rows = session.run(
+                """
+                MATCH (a)-[r]-(b)
+                WHERE a.id IN $ids AND b.id IN $ids
+                RETURN a, b, r
+                """,
+                ids=unique_ids,
+            ).data()
+
+        nodes = []
+        for row in node_rows or []:
+            node = row.get("n")
+            if node is None:
+                continue
+            labels = list(node.labels) if hasattr(node, "labels") else []
+            node_id = node.get("id") if hasattr(node, "get") else None
+            if not node_id:
+                continue
+            nodes.append(
+                {
+                    "id": str(node_id),
+                    "name": node.get("name") if hasattr(node, "get") else None,
+                    "label": labels[0] if labels else "Entity",
+                    "properties": dict(node) if hasattr(node, "items") else {},
+                }
+            )
+
+        edges = []
+        for row in edge_rows or []:
+            source = row.get("a")
+            target = row.get("b")
+            rel = row.get("r")
+            if source is None or target is None or rel is None:
+                continue
+            rel_type = rel.type if hasattr(rel, "type") else None
+            source_id = source.get("id") if hasattr(source, "get") else None
+            target_id = target.get("id") if hasattr(target, "get") else None
+            if not source_id or not target_id:
+                continue
+            edges.append(
+                {
+                    "source": str(source_id),
+                    "target": str(target_id),
+                    "type": rel_type or "RELATED_TO",
+                    "properties": dict(rel) if hasattr(rel, "items") else {},
+                }
+            )
+
+        return {"nodes": nodes, "edges": edges}
 
     def insert_supply_chain(self, rows: List[Dict]):
         self.log.info("Neo4j insert_supply_chain: %d rows", len(rows))

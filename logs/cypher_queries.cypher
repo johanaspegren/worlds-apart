@@ -12,7 +12,7 @@ MATCH (s:Supplier)-[:SUPPLIES]->(comp:Component)<-[:USES]-(p:Product) WHERE p.id
 MATCH (s:Supplier)-[:SUPPLIES]->(comp:Component)<-[:USES]-(p:Product) WHERE p.id = "P4" RETURN s.id AS supplier_id, s.name AS supplier_name, s.country AS supplier_country LIMIT 50
 ;
 
-// Query 3: Determine factories producing Product Gamma and their suppliers to assess disruption impact.
+// Query 3: Find factories producing Product Gamma to assess impact of disruptions.
 // params: {"product_id": "P3"}
 MATCH (s:Supplier)-[:SHIPS_TO]->(f:Factory)-[:PRODUCES]->(p:Product) WHERE p.id = $product_id RETURN f.id AS factory_id, f.name AS factory_name, f.country AS factory_country LIMIT 50
 // substituted

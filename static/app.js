@@ -6,10 +6,12 @@ const traceSummary = document.getElementById('traceSummary');
 const traceList = document.getElementById('traceList');
 const querySummary = document.getElementById('querySummary');
 const queryList = document.getElementById('queryList');
+const verifyQuery = document.getElementById('verifyQuery');
 const ragMetaSummary = document.getElementById('ragMetaSummary');
 const ragMetaList = document.getElementById('ragMetaList');
 const chatInput = document.getElementById('chatInput');
 const askButton = document.getElementById('askButton');
+const graphView = document.getElementById('graphView');
 
 const llmProvider = document.getElementById('llmProvider');
 const llmModel = document.getElementById('llmModel');
@@ -93,8 +95,12 @@ async function handleAsk() {
   traceList.innerHTML = '';
   querySummary.textContent = '';
   queryList.innerHTML = '';
+  if (verifyQuery) {
+    verifyQuery.innerHTML = '';
+  }
   ragMetaSummary.textContent = '';
   ragMetaList.innerHTML = '';
+  renderGraph({ nodes: [], edges: [] });
   setLoading(ragOutput, true);
   setLoading(graphOutput, true);
   try {
@@ -134,11 +140,13 @@ async function handleAsk() {
       payload,
       (event) => {
         if (event.type === 'queries') {
-          renderQueryResults(event.results || []);
+          renderQueryResults(event.results || [], event.graph);
         } else if (event.type === 'status') {
           traceSummary.textContent = event.message || 'Working...';
         } else if (event.type === 'token') {
           graphOutput.textContent += event.content;
+        } else if (event.type === 'verify') {
+          renderVerification(event.verification);
         } else if (event.type === 'error') {
           graphOutput.textContent = `Error: ${event.message}`;
           setLoading(graphOutput, false);
@@ -197,14 +205,19 @@ function renderRagMeta(matches, scenarioText) {
   });
 }
 
-function renderQueryResults(results) {
+function renderQueryResults(results, graph) {
   queryList.innerHTML = '';
+  if (verifyQuery) {
+    verifyQuery.innerHTML = '';
+  }
   if (!results.length) {
     querySummary.textContent = 'No Cypher results returned.';
     queryList.innerHTML = '<div class="query-empty">No query details available.</div>';
+    renderGraph(graph || { nodes: [], edges: [] });
     return;
   }
   querySummary.textContent = `Executed ${results.length} Cypher queries.`;
+  renderGraph(graph || { nodes: [], edges: [] });
   results.forEach((result, index) => {
     const wrapper = document.createElement('div');
     wrapper.classList.add('query-block');
@@ -241,6 +254,145 @@ function renderQueryResults(results) {
 
     queryList.appendChild(wrapper);
   });
+}
+
+function renderVerification(verification) {
+  if (!verifyQuery) {
+    return;
+  }
+  verifyQuery.innerHTML = '';
+  if (!verification || !verification.result) {
+    verifyQuery.innerHTML = '<div class="query-empty">No verification query generated.</div>';
+    return;
+  }
+  const block = document.createElement('div');
+  block.classList.add('verify-block');
+  const heading = document.createElement('div');
+  heading.classList.add('query-heading');
+  heading.textContent = 'Verification query';
+  const cypher = document.createElement('pre');
+  cypher.classList.add('query-cypher');
+  cypher.textContent = verification.result.cypher || '';
+  const params = document.createElement('pre');
+  params.classList.add('query-params');
+  params.textContent = `Params: ${JSON.stringify(verification.result.params || {}, null, 2)}`;
+  const meta = document.createElement('div');
+  meta.classList.add('query-meta');
+  if (verification.result.error) {
+    meta.textContent = `Error: ${verification.result.error}`;
+  } else {
+    const rowCount = typeof verification.result.row_count === 'number' ? verification.result.row_count : 0;
+    meta.textContent = `Rows: ${rowCount}`;
+  }
+  block.appendChild(heading);
+  block.appendChild(cypher);
+  block.appendChild(params);
+  block.appendChild(meta);
+  verifyQuery.appendChild(block);
+  renderGraph(verification.graph || { nodes: [], edges: [] });
+}
+
+function renderGraph(graph) {
+  if (!graphView) {
+    return;
+  }
+  const nodes = graph?.nodes || [];
+  const edges = graph?.edges || [];
+  graphView.innerHTML = '';
+  if (!nodes.length) {
+    graphView.innerHTML = '<div class="graph-empty">No graph data returned yet.</div>';
+    return;
+  }
+
+  const width = Math.max(graphView.clientWidth, 320);
+  const height = Math.max(graphView.clientHeight, 240);
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+  svg.classList.add('graph-svg');
+
+  const centerX = width / 2;
+  const centerY = height / 2;
+  const radius = Math.min(width, height) / 2 - 40;
+  const nodePositions = new Map();
+  nodes.forEach((node, index) => {
+    const angle = (index / nodes.length) * Math.PI * 2;
+    const x = centerX + radius * Math.cos(angle);
+    const y = centerY + radius * Math.sin(angle);
+    nodePositions.set(node.id, { x, y, node });
+  });
+
+  edges.forEach((edge) => {
+    const source = nodePositions.get(edge.source);
+    const target = nodePositions.get(edge.target);
+    if (!source || !target) {
+      return;
+    }
+    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    line.setAttribute('x1', source.x);
+    line.setAttribute('y1', source.y);
+    line.setAttribute('x2', target.x);
+    line.setAttribute('y2', target.y);
+    line.setAttribute('stroke', '#98aee0');
+    line.setAttribute('stroke-width', '1.6');
+    line.setAttribute('opacity', '0.8');
+    svg.appendChild(line);
+
+    const midX = (source.x + target.x) / 2;
+    const midY = (source.y + target.y) / 2;
+    const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    label.setAttribute('x', midX);
+    label.setAttribute('y', midY);
+    label.setAttribute('fill', '#52606d');
+    label.setAttribute('font-size', '10');
+    label.setAttribute('text-anchor', 'middle');
+    label.textContent = edge.type;
+    svg.appendChild(label);
+  });
+
+  nodes.forEach((node) => {
+    const pos = nodePositions.get(node.id);
+    if (!pos) {
+      return;
+    }
+    const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    circle.setAttribute('cx', pos.x);
+    circle.setAttribute('cy', pos.y);
+    circle.setAttribute('r', '16');
+    circle.setAttribute('fill', nodeColor(node.label));
+    circle.setAttribute('stroke', '#102a43');
+    circle.setAttribute('stroke-width', '1');
+    svg.appendChild(circle);
+
+    const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    label.setAttribute('x', pos.x);
+    label.setAttribute('y', pos.y + 30);
+    label.setAttribute('fill', '#102a43');
+    label.setAttribute('font-size', '10');
+    label.setAttribute('text-anchor', 'middle');
+    label.textContent = node.name || node.id;
+    svg.appendChild(label);
+  });
+
+  graphView.appendChild(svg);
+}
+
+function nodeColor(label) {
+  switch ((label || '').toLowerCase()) {
+    case 'supplier':
+      return '#f8b4b4';
+    case 'component':
+      return '#c4b5fd';
+    case 'product':
+      return '#fcd34d';
+    case 'factory':
+      return '#93c5fd';
+    case 'port':
+      return '#86efac';
+    case 'country':
+      return '#fca5a5';
+    default:
+      return '#cbd5e1';
+  }
 }
 
 async function streamEndpoint(url, payload, onEvent, onError) {

@@ -153,3 +153,66 @@ Cypher Results (AUTHORITATIVE EVIDENCE):
 Answer (grounded, structured, and data-driven):
 
 """
+
+VERIFY_PROMPT = """
+You generate a single Cypher query to VERIFY the answer using the graph.
+
+Rules:
+- Use ONLY READ-ONLY clauses: MATCH/RETURN/WHERE/WITH/ORDER BY/LIMIT.
+- Use parameters for literals (e.g., $product_id).
+- The query must directly verify the key claims in the answer.
+- Reuse entities and constraints already present in the executed queries/results.
+- Prefer returning nodes/relationships referenced by the answer.
+- Include LIMIT 50 unless it is an aggregate.
+- Relationship directions are STRICT and MUST follow the ontology exactly.
+- If verification is impossible from the data, return an empty cypher string.
+
+GRAPH VISUALISATION RULES (CRITICAL):
+- Prefer returning bound NODES and RELATIONSHIPS directly (e.g. RETURN p, s, comp).
+- Do NOT project scalar properties (e.g. p.id, s.name) unless aggregation is required.
+- The query is used to render a UI graph; returned variables should form a connected subgraph.
+
+CRITICAL GRAPH RETURN RULE:
+- You MUST return ALL node variables that appear in the MATCH clause.
+- Do NOT return only properties or IDs if nodes are matched.
+- The RETURN clause must expose the full evidence subgraph for UI rendering.
+- Returning nodes is REQUIRED unless the query is purely an aggregate.
+
+EXAMPLE (CORRECT):
+
+MATCH (a)-[r:RELATES_TO]->(b)-[:DOES]->(c:C) WHERE a.id IN ["X1", "X2"] RETURN a, r, b, c
+LIMIT 50
+
+
+EXAMPLE (WRONG — DO NOT DO THIS):
+
+MATCH (a)-[r:RELATES_TO]->(b)-[:DOES]->(c:C) WHERE a.id IN ["X1", "X2"] RETURN a, c
+LIMIT 50
+
+
+
+Schema / Ontology:
+{SCHEMA}
+
+Scenario:
+{SCENARIO}
+
+Question:
+{QUESTION}
+
+Answer to verify:
+{ANSWER}
+
+Executed queries:
+{QUERIES}
+
+Cypher results (evidence):
+{RESULTS}
+
+Return ONLY JSON with this shape:
+{{
+  "cypher": "SINGLE STRING. Do NOT split across keys.",
+  "params": [{{"key": "param_name", "value": "param_value (string)"}}],
+  "reason": "short reason"
+}}
+"""
