@@ -8,6 +8,7 @@ from typing import Dict, List, Tuple
 from dotenv import load_dotenv
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from openpyxl import load_workbook
 
@@ -272,6 +273,91 @@ def chat_graphrag(payload: Dict) -> Dict:
     return retval
 
 
+@app.post("/chat/rag/stream")
+def chat_rag_stream(payload: Dict):
+    question = (payload.get("question") or "").strip()
+    scenario = payload.get("scenario") or {}
+    if not question:
+        raise HTTPException(status_code=400, detail="Question is required")
+
+    llm_config = resolve_llm_config(
+        payload.get("provider"),
+        payload.get("model"),
+        payload.get("embed_model"),
+    )
+    llm = build_llm(llm_config)
+
+    if not STATE.rows and not dev_persist_enabled():
+        raise HTTPException(status_code=400, detail="No data uploaded")
+
+    ensure_vector_store(llm)
+    retrieved = retrieve_notes(question, llm, STATE.vector_store)
+    scenario_text = scenario_summary(scenario)
+    table_context = ""
+    if STATE.rows and len(STATE.rows) <= 200:
+        table_context = rows_to_csv(STATE.rows, max_rows=200)
+
+    prompt = build_rag_prompt(question, scenario_text, retrieved, table_context or None)
+
+    def event_stream():
+        yield f"data: {json.dumps({'type': 'meta', 'retrieval': retrieved, 'scenario': scenario_text})}\n\n"
+        for chunk in llm.stream(prompt, temperature=0.2):
+            if "error" in chunk:
+                yield f"data: {json.dumps({'type': 'error', 'message': chunk['error']})}\n\n"
+                return
+            content = chunk.get("content", "")
+            if content:
+                yield f"data: {json.dumps({'type': 'token', 'content': content})}\n\n"
+        yield "data: {\"type\": \"done\"}\n\n"
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
+@app.post("/chat/graphrag/stream")
+def chat_graphrag_stream(payload: Dict):
+    question = (payload.get("question") or "").strip()
+    scenario = payload.get("scenario") or {}
+    if not question:
+        raise HTTPException(status_code=400, detail="Question is required")
+
+    llm_config = resolve_llm_config(
+        payload.get("provider"),
+        payload.get("model"),
+        payload.get("embed_model"),
+    )
+    llm = build_llm(llm_config)
+
+    if not STATE.rows and not dev_persist_enabled():
+        raise HTTPException(status_code=400, detail="No data uploaded")
+
+    scenario_text = scenario_summary(scenario)
+    graph_store = get_graph_store()
+    agent = QueryAgent(llm, graph_store)
+    if not STATE.rows and dev_persist_enabled() and not graph_store.has_data():
+        raise HTTPException(status_code=400, detail="No graph data available")
+
+    def event_stream():
+        connection = agent.ask_cypher(question, scenario_text)
+        payload = {
+            "type": "queries",
+            "queries": connection.get("queries"),
+            "results": connection.get("results"),
+            "scenario": scenario_text,
+        }
+        yield f"data: {json.dumps(payload)}\n\n"
+        prompt = agent.build_cypher_answer_prompt(question, scenario_text, connection.get("results"))
+        for chunk in llm.stream(prompt, temperature=0.2):
+            if "error" in chunk:
+                yield f"data: {json.dumps({'type': 'error', 'message': chunk['error']})}\n\n"
+                return
+            content = chunk.get("content", "")
+            if content:
+                yield f"data: {json.dumps({'type': 'token', 'content': content})}\n\n"
+        yield "data: {\"type\": \"done\"}\n\n"
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
 def chat_graphrag_legacy(payload: Dict) -> Dict:
     question = (payload.get("question") or "").strip()
     scenario = payload.get("scenario") or {}
@@ -465,6 +551,18 @@ def rag_answer(
     retrieved: List[Dict],
     table_context: str | None = None,
 ) -> str:
+    prompt = build_rag_prompt(question, scenario_text, retrieved, table_context)
+    #print("RAG PROMPT:\n", prompt)
+    log_text("rag_prompt.txt", prompt)
+    return llm.call(prompt, temperature=0.2)
+
+
+def build_rag_prompt(
+    question: str,
+    scenario_text: str,
+    retrieved: List[Dict],
+    table_context: str | None = None,
+) -> str:
     notes_text = "\n\n".join([note["text"] for note in retrieved])
     table_block = f"Table (full data):\n{table_context}\n\n" if table_context else ""
     prompt = (
@@ -476,9 +574,7 @@ def rag_answer(
         f"Question: {question}\n"
         "Answer:"
     )
-    #print("RAG PROMPT:\n", prompt)
-    log_text("rag_prompt.txt", prompt)
-    return llm.call(prompt, temperature=0.2)
+    return prompt
 
 
 def graphrag_fallback_answer(

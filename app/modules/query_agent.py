@@ -279,15 +279,18 @@ class QueryAgent:
         return cypher
 
     def answer_from_cypher(self, question: str, scenario_text: str | None, results):
+        prompt = self.build_cypher_answer_prompt(question, scenario_text, results)
+        log_text("answer_prompt.txt", prompt)
+        return self.llm.call(prompt, temperature=0.2)
+
+    def build_cypher_answer_prompt(self, question: str, scenario_text: str | None, results) -> str:
         schema_text = self.graph_store.get_supply_chain_ontology_text()
-        prompt = ANSWER_PROMPT.format(
+        return ANSWER_PROMPT.format(
             SCHEMA=schema_text,
             SCENARIO=scenario_text or "No scenario constraints applied.",
             QUESTION=question,
             RESULTS=results,
         )
-        log_text("answer_prompt.txt", prompt)
-        return self.llm.call(prompt, temperature=0.2)
 
     def ask_cypher(self, question: str, scenario_text: str | None = None):
         queries = self.generate_cypher_queries(question, scenario_text)

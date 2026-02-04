@@ -89,113 +89,178 @@ async function handleAsk() {
   if (!question) {
     return;
   }
-  ragOutput.textContent = 'Thinking...';
-  graphOutput.textContent = 'Thinking...';
+  ragOutput.textContent = '';
+  graphOutput.textContent = '';
   traceSummary.textContent = '';
   traceList.innerHTML = '';
   querySummary.textContent = '';
   queryList.innerHTML = '';
+  setLoading(ragOutput, true);
+  setLoading(graphOutput, true);
   const scenario = getScenario();
 
   try {
-    const [ragResponse, graphResponse] = await Promise.all([
-      fetch('/chat/rag', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          question,
-          scenario,
-          provider: llmProvider.value,
-          model: llmModel.value,
-          embed_model: llmEmbedModel.value,
-        }),
-      }),
-      fetch('/chat/graphrag', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          question,
-          scenario,
-          provider: llmProvider.value,
-          model: llmModel.value,
-          embed_model: llmEmbedModel.value,
-        }),
-      }),
-    ]);
+    const payload = {
+      question,
+      scenario,
+      provider: llmProvider.value,
+      model: llmModel.value,
+      embed_model: llmEmbedModel.value,
+    };
 
-    const ragData = await ragResponse.json();
-    const graphData = await graphResponse.json();
-
-    if (!ragResponse.ok) {
-      throw new Error(ragData.detail || 'RAG failed');
-    }
-    if (!graphResponse.ok) {
-      throw new Error(graphData.detail || 'GraphRAG failed');
-    }
-
-    ragOutput.textContent = ragData.answer;
-    graphOutput.textContent = graphData.answer;
-    traceSummary.textContent = graphData.trace_summary || 'Trace updated.';
-    if (graphData.trace && graphData.trace.length) {
-      graphData.trace.forEach((trace) => {
-        const item = document.createElement('li');
-        if (trace.summary) {
-          item.textContent = trace.summary;
-        } else {
-          item.textContent = `${trace.rel_type || 'REL'} ${trace.source_span || ''}`.trim();
+    const ragPromise = streamEndpoint(
+      '/chat/rag/stream',
+      payload,
+      (event) => {
+        if (event.type === 'token') {
+          ragOutput.textContent += event.content;
+        } else if (event.type === 'error') {
+          ragOutput.textContent = `Error: ${event.message}`;
+          setLoading(ragOutput, false);
+        } else if (event.type === 'done') {
+          setLoading(ragOutput, false);
         }
-        traceList.appendChild(item);
-      });
-    } else {
-      traceList.innerHTML = '<li>No graph relationships returned.</li>';
-    }
+      },
+      (error) => {
+        ragOutput.textContent = `Error: ${error.message}`;
+        setLoading(ragOutput, false);
+      }
+    );
 
-    if (graphData.results && graphData.results.length) {
-      querySummary.textContent = `Executed ${graphData.results.length} Cypher queries.`;
-      graphData.results.forEach((result, index) => {
-        const wrapper = document.createElement('div');
-        wrapper.classList.add('query-block');
-        const heading = document.createElement('div');
-        heading.classList.add('query-heading');
-        heading.textContent = `Query ${index + 1}: ${result.reason || 'No reason provided.'}`;
-        const cypher = document.createElement('pre');
-        cypher.classList.add('query-cypher');
-        cypher.textContent = result.cypher || '';
-        const params = document.createElement('pre');
-        params.classList.add('query-params');
-        params.textContent = `Params: ${JSON.stringify(result.params || {}, null, 2)}`;
-        wrapper.appendChild(heading);
-        wrapper.appendChild(cypher);
-        wrapper.appendChild(params);
-
-        const meta = document.createElement('div');
-        meta.classList.add('query-meta');
-        const rowCount = typeof result.row_count === 'number' ? result.row_count : 0;
-        meta.textContent = `Rows: ${rowCount}`;
-        wrapper.appendChild(meta);
-
-        if (result.error) {
-          const error = document.createElement('pre');
-          error.classList.add('query-error');
-          error.textContent = `Error: ${result.error}`;
-          wrapper.appendChild(error);
-        } else {
-          const rows = document.createElement('pre');
-          rows.classList.add('query-rows');
-          rows.textContent = JSON.stringify(result.rows || [], null, 2);
-          wrapper.appendChild(rows);
+    const graphPromise = streamEndpoint(
+      '/chat/graphrag/stream',
+      payload,
+      (event) => {
+        if (event.type === 'queries') {
+          renderQueryResults(event.results || []);
+        } else if (event.type === 'token') {
+          graphOutput.textContent += event.content;
+        } else if (event.type === 'error') {
+          graphOutput.textContent = `Error: ${event.message}`;
+          setLoading(graphOutput, false);
+        } else if (event.type === 'done') {
+          setLoading(graphOutput, false);
         }
+      },
+      (error) => {
+        graphOutput.textContent = `Error: ${error.message}`;
+        setLoading(graphOutput, false);
+      }
+    );
 
-        queryList.appendChild(wrapper);
-      });
-    } else {
-      querySummary.textContent = 'No Cypher results returned.';
-      queryList.innerHTML = '<div class="query-empty">No query details available.</div>';
-    }
+    await Promise.all([ragPromise, graphPromise]);
   } catch (error) {
     ragOutput.textContent = `Error: ${error.message}`;
     graphOutput.textContent = `Error: ${error.message}`;
     querySummary.textContent = `Error: ${error.message}`;
     queryList.innerHTML = '';
+    setLoading(ragOutput, false);
+    setLoading(graphOutput, false);
+  }
+}
+
+function setLoading(element, isLoading) {
+  if (isLoading) {
+    element.classList.add('loading');
+  } else {
+    element.classList.remove('loading');
+  }
+}
+
+function renderQueryResults(results) {
+  queryList.innerHTML = '';
+  if (!results.length) {
+    querySummary.textContent = 'No Cypher results returned.';
+    queryList.innerHTML = '<div class="query-empty">No query details available.</div>';
+    return;
+  }
+  querySummary.textContent = `Executed ${results.length} Cypher queries.`;
+  results.forEach((result, index) => {
+    const wrapper = document.createElement('div');
+    wrapper.classList.add('query-block');
+    const heading = document.createElement('div');
+    heading.classList.add('query-heading');
+    heading.textContent = `Query ${index + 1}: ${result.reason || 'No reason provided.'}`;
+    const cypher = document.createElement('pre');
+    cypher.classList.add('query-cypher');
+    cypher.textContent = result.cypher || '';
+    const params = document.createElement('pre');
+    params.classList.add('query-params');
+    params.textContent = `Params: ${JSON.stringify(result.params || {}, null, 2)}`;
+    wrapper.appendChild(heading);
+    wrapper.appendChild(cypher);
+    wrapper.appendChild(params);
+
+    const meta = document.createElement('div');
+    meta.classList.add('query-meta');
+    const rowCount = typeof result.row_count === 'number' ? result.row_count : 0;
+    meta.textContent = `Rows: ${rowCount}`;
+    wrapper.appendChild(meta);
+
+    if (result.error) {
+      const error = document.createElement('pre');
+      error.classList.add('query-error');
+      error.textContent = `Error: ${result.error}`;
+      wrapper.appendChild(error);
+    } else {
+      const rows = document.createElement('pre');
+      rows.classList.add('query-rows');
+      rows.textContent = JSON.stringify(result.rows || [], null, 2);
+      wrapper.appendChild(rows);
+    }
+
+    queryList.appendChild(wrapper);
+  });
+}
+
+async function streamEndpoint(url, payload, onEvent, onError) {
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok || !response.body) {
+    let detail = 'Streaming failed';
+    try {
+      const data = await response.json();
+      detail = data.detail || detail;
+    } catch (err) {
+      // ignore
+    }
+    throw new Error(detail);
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) {
+        break;
+      }
+      buffer += decoder.decode(value, { stream: true });
+      const parts = buffer.split('\n\n');
+      buffer = parts.pop() || '';
+      for (const part of parts) {
+        const lines = part.split('\n');
+        const dataLines = lines
+          .filter((line) => line.startsWith('data: '))
+          .map((line) => line.slice(6))
+          .join('\n');
+        if (!dataLines) {
+          continue;
+        }
+        try {
+          const event = JSON.parse(dataLines);
+          onEvent(event);
+        } catch (err) {
+          // ignore parsing errors
+        }
+      }
+    }
+  } catch (error) {
+    onError(error);
   }
 }
