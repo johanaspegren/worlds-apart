@@ -1,0 +1,13 @@
+{
+  "name": "worlds-apart-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Worlds Apart desktop demo",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "devDependencies": {
+    "electron": "^31.2.1"
+  }
+}
